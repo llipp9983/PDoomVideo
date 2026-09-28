@@ -75,6 +75,23 @@ button{font:inherit;color:inherit}
 .bar .sync{font-size:10px;font-variant-numeric:tabular-nums;min-width:11ch;text-align:center;letter-spacing:.06em}
 .veil{position:fixed;inset:12px;border:3px dashed var(--hazard);display:grid;place-items:center;background:rgba(13,13,15,.7);pointer-events:none}
 .veil span{font:400 clamp(40px,9vw,120px)/1 var(--display);color:var(--hazard)}
+.tap{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);width:min(760px,calc(100% - 32px));
+  background:rgba(13,13,15,.92);border:2px solid var(--hazard);padding:12px 14px;display:grid;gap:8px;font-size:12px;color:var(--bone)}
+.tap.hit{border-color:var(--bone)}
+.tap-top{display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap}
+.tap-top strong{font:400 22px/1 var(--display);letter-spacing:.04em;color:var(--hazard)}
+.tap-top span{font-variant-numeric:tabular-nums;letter-spacing:.06em}
+.tap-line{margin:0;display:flex;flex-wrap:wrap;gap:6px;font:400 clamp(18px,3.4vw,28px)/1.15 var(--display);text-transform:uppercase}
+.tap-line .w{color:rgba(242,238,228,.38);padding:0 4px}
+.tap-line .w.done{color:var(--bone)}
+.tap-line .w.user{box-shadow:inset 0 -3px 0 var(--hazard)}
+.tap-line .w.next{background:var(--hazard);color:var(--ink)}
+.tap-help{margin:0;font-size:11px;color:rgba(242,238,228,.72);letter-spacing:.04em}
+.tap-actions{display:flex;flex-wrap:wrap;gap:6px}
+.tap-actions button{appearance:none;background:transparent;border:1px solid var(--line);color:var(--bone);padding:6px 10px;min-height:32px;font-size:11px;font-weight:700;letter-spacing:.06em;cursor:pointer}
+.tap-actions button:hover{border-color:var(--bone)}
+.tap-actions #t-export{background:var(--hazard);color:var(--ink);border-color:var(--hazard)}
+.tap textarea{width:100%;height:120px;background:#000;color:var(--bone);border:1px solid var(--line);font:11px/1.4 var(--mono);padding:8px}
 .toast{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:var(--hazard);color:var(--ink);padding:8px 14px;font-size:12px;font-weight:700;letter-spacing:.06em;max-width:calc(100% - 32px)}
 @media (max-width:640px){
   .tl{order:-1;flex-basis:100%}
@@ -102,7 +119,8 @@ button{font:inherit;color:inherit}
   </ol>
   <button class="go" id="go" type="button" disabled><span>재생</span><span aria-hidden="true">▶</span></button>
   <p class="note" id="note">두 파일을 한 번에 드롭해도 돼요. 파일은 이 브라우저 안에서만 읽고 어디에도 올리지 않아요. 뒤에 보이는 화면은 파일 없이 도는 데모 루프예요.</p>
-  <p class="keys">SPACE 재생 · ← → 5초 이동 · [ ] 싱크 보정 · F 전체화면 · H HUD</p>
+  <p class="note" id="word-note">단어 타이밍: 음절 수로 자동 추정 · 재생 후 TAP 버튼(T키)으로 직접 맞출 수 있어요</p>
+  <p class="keys">SPACE 재생 · ← → 5초 이동 · [ ] 싱크 보정 · T 탭 싱크 · F 전체화면 · H HUD</p>
 </section>
 
 <div class="bar hide" id="bar" role="toolbar" aria-label="재생 컨트롤">
@@ -112,6 +130,7 @@ button{font:inherit;color:inherit}
   </div>
   <span class="time" id="time">00:00.00 / 00:00</span>
   <span class="grp"><button type="button" id="b-sm" aria-label="싱크 10ms 앞당기기">−</button><span class="sync" id="sync">SYNC +0ms</span><button type="button" id="b-sp" aria-label="싱크 10ms 늦추기">+</button></span>
+  <button type="button" id="b-tap" aria-pressed="false">TAP</button>
   <button type="button" id="b-flash" aria-pressed="true">FLASH</button>
   <button type="button" id="b-hud" aria-pressed="true">HUD</button>
   <button type="button" id="b-files">FILES</button>
@@ -119,6 +138,18 @@ button{font:inherit;color:inherit}
   <button type="button" id="b-fs">FULL</button>
 </div>
 <div class="veil" id="veil" hidden><span>DROP TO LOAD</span></div>
+<section class="tap" id="tap" hidden aria-label="탭 싱크">
+  <div class="tap-top"><strong>TAP SYNC</strong><span id="tap-pos">LINE 0/0</span><span id="tap-count">0/0 단어 맞춤</span></div>
+  <p class="tap-line" id="tap-line"></p>
+  <p class="tap-help">J · Enter · 화면 탭 = 다음 단어 &nbsp;/&nbsp; ⌫ 되돌리기 &nbsp;/&nbsp; ← 이 줄 다시 &nbsp;/&nbsp; → 다음 줄 &nbsp;/&nbsp; Space 재생·정지 &nbsp;/&nbsp; S 속도</p>
+  <div class="tap-actions">
+    <button type="button" id="t-rate">속도 1×</button>
+    <button type="button" id="t-export">LRC 내보내기</button>
+    <button type="button" id="t-reset">맞춘 값 지우기</button>
+    <button type="button" id="t-close">끝내기</button>
+  </div>
+  <textarea id="t-out" hidden readonly aria-label="내보낸 LRC"></textarea>
+</section>
 <div class="toast" id="toast" hidden></div>
 
 <script>
@@ -301,18 +332,20 @@ const S = {
   demoLines: [], demoEvents: [], demoLen: 0, demoStart: performance.now() / 1000,
   flash: !RM, hud: true, offset: 0, freeze: null,
   audioName: '', lyricsName: '', lyricsCount: 0, decoding: 0,
+  rate: 1, entries: [], meta: [], lyricsHash: '', wordSource: 'auto',
 };
 try { const o = JSON.parse(localStorage.getItem('ptt-prefs') || '{}'); if (typeof o.offset === 'number') S.offset = o.offset; if (typeof o.flash === 'boolean') S.flash = o.flash; if (typeof o.hud === 'boolean') S.hud = o.hud; } catch (_) {}
+const TP = { on: false, flat: [], cur: 0, undo: [], lastLine: -1 }; // tap-sync session
 function savePrefs() { try { localStorage.setItem('ptt-prefs', JSON.stringify({ offset: S.offset, flash: S.flash, hud: S.hud })); } catch (_) {} }
 function sectionAt(t) { let s = SEC_T[0]; for (const x of SEC_T) if (t >= x.t) s = x; return s; }
 
 /* ============================ lyrics ============================ */
-function parseLRC(text) {
+function parseLRC(text, metaOut) {
   const out = []; let offset = 0;
   for (const raw of text.replace(/\r/g, '').split('\n')) {
     const tags = [...raw.matchAll(/\[(\d{1,3}):(\d{1,2}(?:[.:]\d{1,3})?)\]/g)];
     const meta = raw.match(/^\s*\[(ti|ar|al|by|offset|length|re|ve):([^\]]*)\]\s*$/i);
-    if (meta && !tags.length) { if (meta[1].toLowerCase() === 'offset') offset = (parseFloat(meta[2]) || 0) / 1000; continue; }
+    if (meta && !tags.length) { if (meta[1].toLowerCase() === 'offset') offset = (parseFloat(meta[2]) || 0) / 1000; else if (metaOut) metaOut.push(raw.trim()); continue; }
     if (!tags.length) continue;
     const body = raw.replace(/\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/g, '').trim();
     for (const m of tags) out.push({ t: parseInt(m[1], 10) * 60 + parseFloat(m[2].replace(':', '.')) - offset, text: body });
@@ -340,11 +373,21 @@ function makeLine(raw, t0, tEnd, clk, layout, kind) {
       const qn = (tok.match(/["“”]/g) || []).length, startQ = /^[^\p{L}\p{N}]*["“]/u.test(tok);
       if (startQ) inQ = true; const isQ = inQ; if (qn && (!startQ || qn >= 2)) inQ = false;
       const c = clean(tok); if (!c) continue;
-      words.push({ text: c.toUpperCase(), low: c, lc: c.toLowerCase(), q: isQ, t: curT, fx: null });
+      words.push({ text: c.toUpperCase(), low: c, lc: c.toLowerCase(), q: isQ, t: curT, fx: null, pause: /[,;:.!?…]["”']?$/.test(tok) });
       curT = null;
     }
   }
-  return { t0, tEnd, words, adlib: adl.join(' · '), lc: main.toLowerCase(), quote: /["“”]/.test(main), layout, kind, spb: clk.spb };
+  return { t0, tEnd, body: raw, words, adlib: adl.join(' · '), lc: main.toLowerCase(), quote: /["“”]/.test(main), layout, kind, spb: clk.spb };
+}
+function syllables(word) {
+  let n = 0;
+  for (let p of word.toLowerCase().split('-')) {
+    p = p.replace(/[^a-z]/g, ''); if (!p) continue;
+    if (p.length <= 3) { n++; continue; }
+    p = p.replace(/(?:[^laeiouy]es|[^laeiouy]ed|[^laeiouy]e)$/, '').replace(/^y/, '');
+    const m = p.match(/[aeiouy]{1,2}/g); n += Math.max(1, m ? m.length : 1);
+  }
+  return Math.max(1, n);
 }
 function timeWords(L, clk) {
   const ws = L.words; if (!ws.length) return;
@@ -358,9 +401,12 @@ function timeWords(L, clk) {
     }
     return;
   }
-  const span = L.tEnd - L.t0, n = ws.length;
-  const sing = Math.min(span * .88, Math.max(.9, n * .34 + .3));
-  const wt = ws.map(w => .55 + .12 * w.text.length), tot = wt.reduce((a, b) => a + b, 0);
+  // No word tags: spread words by syllable count; a comma adds a breath before the next word.
+  const span = L.tEnd - L.t0;
+  const syl = ws.map(w => syllables(w.lc)), sylTot = syl.reduce((a, b) => a + b, 0);
+  const pauses = ws.slice(0, -1).filter(w => w.pause).length;
+  const sing = Math.min(span * .9, Math.max(.9, sylTot * .22 + pauses * .25 + .3));
+  const wt = ws.map((w, i) => syl[i] + (w.pause && i < ws.length - 1 ? 1.1 : 0)), tot = wt.reduce((a, b) => a + b, 0);
   const q = clk.spb / 4; let acc = 0, prev = -Infinity;
   ws.forEach((w, i) => {
     let tt = L.t0 + sing * acc / tot; acc += wt[i];
@@ -386,9 +432,9 @@ function ruleLayouts(L) {
   return null;
 }
 function finalize(lines, clk, kindOf) {
-  lines.forEach((L, i) => { const nx = lines[i + 1]; if (nx && nx.t0 < L.tEnd) L.tEnd = Math.max(L.t0 + .2, nx.t0); });
-  lines.forEach(L => timeWords(L, clk));
-  lines.forEach((L, i) => { const nx = lines[i + 1]; if (nx && nx.t0 - L.tEnd < .7) L.tEnd = nx.t0; });
+  lines.forEach((L, i) => { const nx = lines[i + 1]; if (nx && nx.t0 < L.tEnd) L.tEnd = Math.max(L.t0 + .2, nx.t0); L.rawEnd = L.tEnd; });
+  lines.forEach(L => { timeWords(L, clk); L.words.forEach(w => { w.auto = w.t; }); });
+  relayout(lines);
   lines.forEach((L, i) => { L.idx = i; if (!L.kind) L.kind = kindOf(L.t0); L.words.forEach(w => { w.fx = wordFx(w.lc); }); });
   const rules = lines.map(ruleLayouts);
   lines.forEach((L, i) => {
@@ -398,6 +444,32 @@ function finalize(lines, clk, kindOf) {
     const cands = rules[i] || pool.map((_, j) => pool[(i + j) % pool.length]);
     L.layout = cands.find(c => c !== prev && c !== next) || cands.find(c => c !== prev) || cands[0];
   });
+}
+// Line start = its first word; hold a line through short gaps so the screen never blinks.
+function relayout(lines) {
+  lines.forEach(L => { if (L.words.length) L.t0 = L.words[0].t; });
+  lines.forEach((L, i) => {
+    const nx = lines[i + 1], last = L.words.length ? L.words[L.words.length - 1].t : L.t0;
+    let end = Math.max(L.rawEnd, last + .3);
+    if (nx) { if (nx.t0 - end < .7) end = nx.t0; end = Math.min(end, nx.t0); }
+    L.tEnd = Math.max(end, L.t0 + .2);
+  });
+}
+// Apply tapped times (w.user). Untapped words after a tapped one keep their rhythm, shifted by the same amount.
+function retime() {
+  for (const L of S.lines) {
+    let shift = 0;
+    L.words.forEach((w, k) => {
+      let t;
+      if (w.user != null) { t = w.user; shift = w.user - w.auto; } else t = w.auto + shift;
+      if (k) t = Math.max(t, L.words[k - 1].t + (w.user != null ? .01 : .06));
+      w.t = t;
+    });
+  }
+  relayout(S.lines);
+  S.events = buildEvents(S.lines); S.tolls = S.events.filter(e => e.fx === 'toll');
+  S.firstT = S.lines.length ? S.lines[0].t0 : 0;
+  S.lastEnd = S.lines.length ? S.lines[S.lines.length - 1].tEnd : 0;
 }
 function buildEvents(lines) {
   const ev = []; let id = 1;
@@ -432,16 +504,52 @@ function buildDemo() {
   lines.forEach((L, i) => { L.idx = i; L.words.forEach(w => { w.fx = wordFx(w.lc); }); });
   S.demoLines = lines; S.demoEvents = buildEvents(lines); S.demoLen = DEMO.length * bl;
 }
-function useLyrics(entries, name) {
-  S.lines = buildSong(entries); S.events = buildEvents(S.lines);
-  S.tolls = S.events.filter(e => e.fx === 'toll');
-  S.firstT = S.lines.length ? S.lines[0].t0 : 0;
-  S.lastEnd = S.lines.length ? S.lines[S.lines.length - 1].tEnd : 0;
+function useLyrics(entries, name, text, meta) {
+  S.lines = buildSong(entries); S.entries = entries; S.meta = meta || [];
+  S.lyricsHash = hstr(text).toString(36) + '-' + text.length;
+  S.wordSource = S.lines.some(L => /<\d{1,3}:\d/.test(L.body)) ? 'tags' : 'auto';
+  loadTaps(); retime();
   S.lyricsName = name; S.lyricsCount = S.lines.length;
+  if (TP.on) { buildFlat(); TP.cur = cursorFromTime(heardTime()); TP.undo = []; renderTapPanel(); }
+}
+// Tapped word times live in this browser only, keyed by the lyric file's hash (numbers only).
+const tapKey = () => 'ptt-taps:' + S.lyricsHash;
+function tapCount() { let n = 0; for (const L of S.lines) for (const w of L.words) if (w.user != null) n++; return n; }
+function saveTaps() {
+  try { localStorage.setItem(tapKey(), JSON.stringify({ v: 1, n: S.lines.length, t: S.lines.map(L => L.words.map(w => w.user == null ? null : +w.user.toFixed(3))) })); } catch (_) {}
+}
+function loadTaps() {
+  try {
+    const o = JSON.parse(localStorage.getItem(tapKey()) || 'null'); if (!o || o.n !== S.lines.length) return;
+    o.t.forEach((arr, i) => { const L = S.lines[i]; if (!L || !arr || arr.length !== L.words.length) return; arr.forEach((v, j) => { if (typeof v === 'number') L.words[j].user = v; }); });
+  } catch (_) {}
+}
+function clearTaps() { for (const L of S.lines) for (const w of L.words) delete w.user; try { localStorage.removeItem(tapKey()); } catch (_) {} retime(); }
+// Rebuild the user's own lyric file with <mm:ss.xx> word tags (enhanced LRC).
+function tagBody(L) {
+  const body = L.body.replace(/<\d{1,3}:\d{1,2}(?:\.\d{1,3})?>/g, '');
+  let depth = 0, wi = 0, out = '';
+  for (const tk of body.split(/(\s+)/)) {
+    if (!tk || /^\s+$/.test(tk)) { out += tk; continue; }
+    const inParen = depth > 0 || tk.startsWith('(');
+    depth = Math.max(0, depth + (tk.match(/\(/g) || []).length - (tk.match(/\)/g) || []).length);
+    if (!inParen && clean(tk.replace(/\(.*$/, '')) && wi < L.words.length) { out += `<${fmt(L.words[wi].t)}>${tk}`; wi++; } else out += tk;
+  }
+  if (wi === L.words.length) return out;
+  return L.words.map(w => `<${fmt(w.t)}>${w.low}`).join(' ') + (L.adlib ? ` (${L.adlib})` : '');
+}
+function exportLRC() {
+  const out = [...S.meta]; let li = 0;
+  for (const en of S.entries) {
+    const L = S.lines[li];
+    if (en.text.trim() && L && L.body === en.text) { out.push(`[${fmt(L.t0)}]${tagBody(L)}`); li++; }
+    else out.push(`[${fmt(en.t)}]${en.text}`);
+  }
+  return out.join('\n') + '\n';
 }
 
 /* ============================ audio ============================ */
-const A = { ctx: null, buf: null, src: null, an: null, gain: null, rec: null, freq: null, playing: false, t0: 0, pos: 0 };
+const A = { ctx: null, buf: null, src: null, an: null, gain: null, rec: null, freq: null, playing: false, t0: 0, pos: 0, pos0: 0, rate: 1 };
 const AU = { bass: 0, level: 0 };
 function ensureCtx() {
   if (!A.ctx) {
@@ -455,17 +563,20 @@ function ensureCtx() {
 function duration() { return A.buf ? A.buf.duration : Math.max(10, S.lastEnd + 8); }
 function rawTime() {
   if (!A.playing) return A.pos;
-  return A.buf ? A.ctx.currentTime - A.t0 : performance.now() / 1000 - A.t0;
+  return A.pos0 + ((A.buf ? A.ctx.currentTime : performance.now() / 1000) - A.t0) * A.rate;
 }
+function latency() { return A.playing && A.buf && A.ctx ? ((A.ctx.outputLatency || 0) + (A.ctx.baseLatency || 0)) * A.rate : 0; }
+function heardTime() { return rawTime() - latency(); } // song position the listener hears right now
 function play() {
   if (A.playing) return;
   if (A.pos >= duration() - .05) A.pos = 0;
   if (A.buf) {
     ensureCtx(); A.ctx.resume();
-    const s = A.ctx.createBufferSource(); s.buffer = A.buf; s.connect(A.an);
+    const s = A.ctx.createBufferSource(); s.buffer = A.buf; s.playbackRate.value = S.rate; s.connect(A.an);
     s.onended = () => { if (A.src === s && A.playing) { A.playing = false; A.pos = duration(); A.src = null; onEnded(); } };
-    s.start(0, A.pos); A.src = s; A.t0 = A.ctx.currentTime - A.pos;
-  } else A.t0 = performance.now() / 1000 - A.pos;
+    s.start(0, A.pos); A.src = s; A.t0 = A.ctx.currentTime;
+  } else A.t0 = performance.now() / 1000;
+  A.pos0 = A.pos; A.rate = S.rate;
   A.playing = true; syncUI();
 }
 function pause() {
@@ -475,11 +586,11 @@ function pause() {
   syncUI();
 }
 function seek(t) { const was = A.playing; if (was) pause(); A.pos = clamp(t, 0, duration()); if (was) play(); syncUI(); }
+function setRate(r) { const was = A.playing; if (was) pause(); S.rate = r; if (was) play(); syncUI(); }
 function songTime() {
   let t = rawTime();
   if (A.playing && !A.buf && t >= duration()) { A.playing = false; A.pos = duration(); onEnded(); t = A.pos; }
-  const lat = A.playing && A.buf && A.ctx ? (A.ctx.outputLatency || 0) + (A.ctx.baseLatency || 0) : 0;
-  return t - lat + S.offset / 1000;
+  return t - latency() + S.offset / 1000;
 }
 function sampleAudio() {
   if (!(A.playing && A.buf && A.an)) { AU.bass *= .9; AU.level *= .9; return; }
@@ -1204,6 +1315,7 @@ function syncUI() {
   $('b-play').textContent = A.playing ? '❚❚' : '▶'; $('b-play').setAttribute('aria-label', A.playing ? '일시정지' : '재생');
   $('sync').textContent = `SYNC ${S.offset >= 0 ? '+' : ''}${S.offset}ms`;
   $('b-flash').setAttribute('aria-pressed', String(S.flash)); $('b-hud').setAttribute('aria-pressed', String(S.hud));
+  $('b-tap').setAttribute('aria-pressed', String(TP.on)); $('t-rate').textContent = `속도 ${S.rate}×`;
   if (S.mode === 'song') wake();
 }
 function refreshBooth() {
@@ -1213,6 +1325,11 @@ function refreshBooth() {
   else if (A.buf) $('v-audio').textContent = `${S.audioName} · ${fmt(A.buf.duration)}`;
   else if (!sa.classList.contains('err')) $('v-audio').textContent = '파일 선택 또는 화면에 드롭';
   sl.classList.toggle('ok', S.lyricsCount > 0); if (S.lyricsCount) $('v-lyr').textContent = `${S.lyricsName} · ${S.lyricsCount}줄`;
+  const tc = tapCount();
+  $('word-note').textContent = !S.lyricsCount ? '단어 타이밍: 가사를 넣으면 음절 수로 자동 추정해요 · 재생 중 TAP(T키)으로 직접 맞출 수 있어요'
+    : tc ? `단어 타이밍: 직접 맞춘 값 ${tc}개 적용됨 (이 브라우저에 저장)`
+    : S.wordSource === 'tags' ? '단어 타이밍: 가사 파일의 단어 태그 사용'
+    : '단어 타이밍: 음절 수로 자동 추정 · 재생 중 TAP(T키)으로 직접 맞출 수 있어요';
   go.disabled = S.decoding > 0 || !(A.buf || S.lyricsCount);
   go.firstElementChild.textContent = S.decoding ? '음원 준비 중' : A.buf && S.lyricsCount ? '재생' : A.buf ? '가사 없이 재생' : S.lyricsCount ? '음원 없이 재생' : '재생';
   buildTimeline();
@@ -1233,14 +1350,14 @@ async function loadAudioBuffer(getBuffer, name) {
   return ok;
 }
 function loadLyricsText(text, name) {
-  let entries = parseLRC(text);
+  const meta = []; let entries = parseLRC(text, meta);
   if (!entries.length) { // untimed text: one line every two bars
     const ls = text.replace(/\r/g, '').split('\n').map(s => s.trim()).filter(Boolean);
     entries = ls.map((s, i) => ({ t: SONG_CLK.beat0 + i * 8 * SONG_CLK.spb, text: s }));
     if (entries.length) say('타임코드가 없어 두 마디 간격으로 배치했어요');
   }
   if (!entries.some(x => x.text)) { $('slot-lyr').classList.add('err'); $('v-lyr').textContent = '가사 줄을 찾지 못했어요. [mm:ss.xx]가 붙은 LRC를 넣어 주세요.'; return false; }
-  $('slot-lyr').classList.remove('err'); useLyrics(entries, name); refreshBooth(); return true;
+  $('slot-lyr').classList.remove('err'); useLyrics(entries, name.replace(/^.*\//, ''), text, meta); refreshBooth(); return true;
 }
 async function takeFiles(list) {
   for (const f of list) {
@@ -1267,23 +1384,29 @@ $('b-flash').addEventListener('click', () => { S.flash = !S.flash; savePrefs(); 
 $('b-hud').addEventListener('click', () => { S.hud = !S.hud; savePrefs(); syncUI(); });
 $('b-files').addEventListener('click', () => { pause(); booth.classList.toggle('min'); });
 $('b-fs').addEventListener('click', () => { const d = document; if (d.fullscreenElement) d.exitFullscreen().catch(() => {}); else if (d.documentElement.requestFullscreen) d.documentElement.requestFullscreen().catch(() => say('이 화면에서는 전체화면을 쓸 수 없어요')); });
-cv.addEventListener('click', () => { if (S.mode === 'song') togglePlay(); });
+cv.addEventListener('pointerdown', ev => { if (TP.on) { ev.preventDefault(); doTap(ev.timeStamp); } });
+cv.addEventListener('click', () => { if (S.mode === 'song' && !TP.on) togglePlay(); });
 let scrub = false;
-const scrubTo = ev => { const r = tl.getBoundingClientRect(); seek(clamp((ev.clientX - r.left) / r.width) * duration()); };
+const scrubTo = ev => { const r = tl.getBoundingClientRect(); userSeek(clamp((ev.clientX - r.left) / r.width) * duration()); };
 tl.addEventListener('pointerdown', ev => { if (S.mode !== 'song') return; scrub = true; tl.setPointerCapture(ev.pointerId); scrubTo(ev); });
 tl.addEventListener('pointermove', ev => { if (scrub) scrubTo(ev); });
 tl.addEventListener('pointerup', () => { scrub = false; });
-tl.addEventListener('keydown', ev => { if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') { ev.preventDefault(); ev.stopPropagation(); seek(A.pos + (ev.key === 'ArrowLeft' ? -5 : 5) + (A.playing ? rawTime() - A.pos : 0)); } });
+tl.addEventListener('keydown', ev => { if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') { ev.preventDefault(); ev.stopPropagation(); userSeek(rawTime() + (ev.key === 'ArrowLeft' ? -5 : 5)); } });
 addEventListener('pointermove', wake, { passive: true }); addEventListener('touchstart', wake, { passive: true });
 addEventListener('keydown', ev => {
-  if (ev.target.closest && ev.target.closest('input')) return;
+  if (ev.target.closest && ev.target.closest('input, textarea')) return;
   const k = ev.key;
+  if (TP.on && (k === 'j' || k === 'J' || k === 'Enter')) { ev.preventDefault(); if (!ev.repeat) doTap(ev.timeStamp); return; }
+  if (TP.on && k === 'Backspace') { ev.preventDefault(); undoTap(); return; }
+  if (TP.on && (k === 'ArrowLeft' || k === 'ArrowRight')) { ev.preventDefault(); tapJumpLine(k === 'ArrowLeft' ? -1 : 1); return; }
   if (k === ' ') { ev.preventDefault(); togglePlay(); }
-  else if (k === 'ArrowLeft' || k === 'ArrowRight') { if (S.mode === 'song') { ev.preventDefault(); seek(rawTime() + (k === 'ArrowLeft' ? -5 : 5)); } }
+  else if (k === 'ArrowLeft' || k === 'ArrowRight') { if (S.mode === 'song') { ev.preventDefault(); userSeek(rawTime() + (k === 'ArrowLeft' ? -5 : 5)); } }
+  else if (k === 't' || k === 'T') setTap(!TP.on);
+  else if (k === 's' || k === 'S') setRate(S.rate === 1 ? .75 : S.rate === .75 ? .5 : 1);
   else if (k === '[' || k === ']') { S.offset += (k === '[' ? -1 : 1) * (ev.shiftKey ? 50 : 10); savePrefs(); syncUI(); say(`SYNC ${S.offset >= 0 ? '+' : ''}${S.offset}ms`); }
   else if (k === 'f' || k === 'F') $('b-fs').click();
   else if (k === 'h' || k === 'H') $('b-hud').click();
-  else if ((k === 'r' || k === 'R') && S.mode === 'song') seek(0);
+  else if ((k === 'r' || k === 'R') && S.mode === 'song') userSeek(0);
   else return;
   wake();
 });
@@ -1293,6 +1416,76 @@ addEventListener('dragenter', ev => { ev.preventDefault(); dragDepth++; veil.hid
 addEventListener('dragover', ev => ev.preventDefault());
 addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; veil.hidden = true; } });
 addEventListener('drop', ev => { ev.preventDefault(); dragDepth = 0; veil.hidden = true; if (ev.dataTransfer && ev.dataTransfer.files.length) { booth.classList.remove('min'); takeFiles(ev.dataTransfer.files); } });
+
+/* ---------- TAP SYNC ---------- */
+const tapEl = $('tap');
+function buildFlat() { TP.flat = []; S.lines.forEach((L, li) => L.words.forEach((_, wi) => TP.flat.push([li, wi]))); }
+function flatIndex(li, wi) { let n = 0; for (let i = 0; i < li && i < S.lines.length; i++) n += S.lines[i].words.length; return n + wi; }
+function cursorFromTime(t) { const li = S.lines.findIndex(L => L.t0 >= t - .25); return li < 0 ? TP.flat.length : flatIndex(li, 0); }
+function renderTapPanel(hit) {
+  if (!TP.on) return;
+  const total = TP.flat.length, cur = TP.flat[TP.cur], li = cur ? cur[0] : S.lines.length - 1, L = S.lines[li];
+  $('tap-count').textContent = `${tapCount()}/${total} 단어 맞춤`;
+  $('tap-pos').textContent = L ? `LINE ${li + 1}/${S.lines.length} · [${fmt(L.t0)}]` : 'LINE 0/0';
+  const box = $('tap-line'); box.textContent = '';
+  if (!L) { box.textContent = '가사를 먼저 넣어 주세요'; return; }
+  if (!cur) { const d = document.createElement('span'); d.className = 'w done'; d.textContent = '끝까지 맞췄어요 · LRC 내보내기로 저장하세요'; box.appendChild(d); }
+  else L.words.forEach((w, wi) => {
+    const sp = document.createElement('span'); sp.className = 'w' + (wi < cur[1] ? ' done' : '') + (wi === cur[1] ? ' next' : '') + (w.user != null ? ' user' : '');
+    sp.textContent = w.text; box.appendChild(sp);
+  });
+  if (hit) { tapEl.classList.add('hit'); setTimeout(() => tapEl.classList.remove('hit'), 90); }
+}
+function setTap(on) {
+  if (on && !S.lyricsCount) { say('가사 파일을 먼저 넣어 주세요'); return; }
+  TP.on = on; tapEl.hidden = !on; $('t-out').hidden = true;
+  if (on) {
+    if (S.mode !== 'song') { S.mode = 'song'; booth.classList.add('min'); }
+    buildFlat(); TP.cur = cursorFromTime(heardTime()); TP.undo = []; TP.lastLine = -1; renderTapPanel();
+  } else { if (S.rate !== 1) setRate(1); refreshBooth(); }
+  syncUI(); wake();
+}
+function doTap(ts) {
+  if (!TP.on) return;
+  if (!A.playing) { say('재생 중에 탭해 주세요 (Space)'); return; }
+  const f = TP.flat[TP.cur]; if (!f) return;
+  const delay = typeof ts === 'number' ? clamp((performance.now() - ts) / 1000, 0, .1) : 0;
+  const T = heardTime() - delay * A.rate;
+  const w = S.lines[f[0]].words[f[1]];
+  TP.undo.push([TP.cur, w.user]); w.user = +T.toFixed(3); TP.lastLine = f[0]; TP.cur++;
+  retime(); saveTaps(); renderTapPanel(true);
+}
+function undoTap() {
+  const u = TP.undo.pop(); if (!u) return; const [i, prev] = u; const [li, wi] = TP.flat[i]; const w = S.lines[li].words[wi];
+  if (prev == null) delete w.user; else w.user = prev;
+  TP.cur = i; retime(); saveTaps(); renderTapPanel();
+}
+function tapJumpLine(dir) {
+  const cur = TP.flat[TP.cur]; let li = cur ? cur[0] : S.lines.length - 1;
+  if (dir < 0) { if ((!cur || cur[1] === 0) && TP.lastLine >= 0 && TP.lastLine === li - 1) li = TP.lastLine; else if (!cur) li = S.lines.length - 1; }
+  else li = Math.min(S.lines.length - 1, li + 1);
+  TP.cur = flatIndex(li, 0); TP.lastLine = -1; seek(Math.max(0, S.lines[li].t0 - 1.5)); renderTapPanel();
+}
+function userSeek(t) { seek(t); if (TP.on) { TP.cur = cursorFromTime(t); TP.lastLine = -1; renderTapPanel(); } }
+$('b-tap').addEventListener('click', () => setTap(!TP.on));
+$('t-close').addEventListener('click', () => setTap(false));
+$('t-rate').addEventListener('click', () => setRate(S.rate === 1 ? .75 : S.rate === .75 ? .5 : 1));
+let resetArm = 0;
+$('t-reset').addEventListener('click', ev => {
+  const b = ev.currentTarget;
+  if (!resetArm) { b.textContent = '한 번 더 누르면 지워요'; resetArm = setTimeout(() => { resetArm = 0; b.textContent = '맞춘 값 지우기'; }, 3000); return; }
+  clearTimeout(resetArm); resetArm = 0; b.textContent = '맞춘 값 지우기'; clearTaps(); TP.undo = []; renderTapPanel(); say('맞춘 값을 지웠어요');
+});
+$('t-export').addEventListener('click', () => {
+  const text = exportLRC(), out = $('t-out');
+  const show = () => { out.value = text; out.hidden = false; out.focus(); out.select(); };
+  if (window.self === window.top) {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    a.download = (S.lyricsName.replace(/\.(lrc|txt)$/i, '') || 'lyrics') + '-synced.lrc'; document.body.appendChild(a); a.click(); a.remove();
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => say(window.self === window.top ? 'LRC 파일을 저장하고 클립보드에도 복사했어요' : 'LRC를 클립보드에 복사했어요'), () => { show(); say('아래 칸의 내용을 복사해 주세요'); });
+  else { show(); say('아래 칸의 내용을 복사해 주세요'); }
+});
 
 // Recording (top-level window only: sandboxed previews block downloads)
 const canRec = window.self === window.top && typeof MediaRecorder !== 'undefined' && !!cv.captureStream;
@@ -1310,7 +1503,7 @@ recBtn.addEventListener('click', () => {
     a.download = `pay-that-toll-kinetic.${(rec.mimeType || '').includes('mp4') ? 'mp4' : 'webm'}`; document.body.appendChild(a); a.click(); a.remove(); say('녹화 파일을 저장했어요'); };
   A.rec = rec; recBtn.classList.add('on'); recBtn.textContent = '■ STOP';
   if (S.mode !== 'song') { S.mode = 'song'; booth.classList.add('min'); }
-  pause(); A.pos = 0; rec.start(250); play(); wake();
+  pause(); S.rate = 1; A.pos = 0; rec.start(250); play(); wake();
 });
 function onEndedRec() { if (A.rec) A.rec.stop(); }
 
@@ -1347,7 +1540,7 @@ requestAnimationFrame(frame);
 if (location.protocol !== 'file:') autoload();
 
 // debug hooks for frame checks: PTT.at(seconds) freezes a frame, PTT.run() resumes
-window.PTT = { S, at(t, mode = 'song') { S.mode = mode; S.freeze = t; booth.classList.add('min'); }, run() { S.freeze = null; }, lines: () => S.lines.map(L => ({ t0: L.t0, tEnd: L.tEnd, layout: L.layout, kind: L.kind, n: L.words.length })) };
+window.PTT = { S, TP, tap: doTap, undo: undoTap, setTap, exportLRC, words: () => S.lines.map(L => L.words.map(w => +w.t.toFixed(3))), at(t, mode = 'song') { S.mode = mode; S.freeze = t; booth.classList.add('min'); }, run() { S.freeze = null; }, lines: () => S.lines.map(L => ({ t0: L.t0, tEnd: L.tEnd, layout: L.layout, kind: L.kind, n: L.words.length })) };
 })();
 </script>
 </body>
