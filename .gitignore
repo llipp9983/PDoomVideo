@@ -1,3 +1,6 @@
 node_modules/
 out/
 assets/source.mp4
+
+# local media for the Pay That Toll demo (copyrighted, never commit)
+pay-that-toll/media/
