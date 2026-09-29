@@ -631,19 +631,36 @@ function pat(name) { let m = PATC.get(ctx); if (!m) { m = {}; PATC.set(ctx, m); 
 function texFill(name, x, y, w, h, a = 1) { ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = pat(name); ctx.fillRect(x, y, w, h); ctx.restore(); }
 function txt(s, x, base, px, f, col, align = 'left') { setF(f, px); ctx.textAlign = align; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = col; ctx.fillText(s, x, base); }
 // hold / snap / overshoot: a scale curve that lands hard instead of fading
-function snapK(a) { if (a < 0) return 0; if (a < .07) return lerp(1.3, .965, a / .07); if (a < .17) return lerp(.965, 1.012, (a - .07) / .1); return lerp(1.012, 1, clamp((a - .17) / .2)); }
+function snapK(a) { if (a < 0) return 0; if (a < .08) return lerp(1.12, .985, eOutCubic(a / .08)); if (a < .2) return lerp(.985, 1.006, eInOut((a - .08) / .12)); return lerp(1.006, 1, eInOut(clamp((a - .2) / .25))); }
 const sent = s => s.toLowerCase().replace(/^\W*\w/, m => m.toUpperCase()).replace(/\bi\b/g, 'I').replace(/\bmama\b/g, 'Mama');
 function splitLines(text, f, maxW) { const ws = text.split(' '), out = []; let cur = ''; for (const w of ws) { const t2 = cur ? cur + ' ' + w : w; if (cur && mw(t2, f) > maxW) { out.push(cur); cur = w; } else cur = t2; } if (cur) out.push(cur); return out; }
-// big type block: left aligned, snaps in, lines stacked; returns bottom y
+// big type block: left aligned, each line rises out of a mask (slight overshoot), lines stacked; returns bottom y
 function bigType(text, x, y, maxW, maxPx, f, col, a, o = {}) {
   if (a < 0) return y; if (o.sx) maxW /= o.sx; let px = maxPx, lines = splitLines(text, f, maxW / px);
   for (let k = 0; k < 12 && lines.some(l => mw(l, f) * px > maxW); k++) { px *= .9; lines = splitLines(text, f, maxW / px); }
-  const s = o.noSnap ? 1 : snapK(a), cap = capOf(f) * px, lh = cap * (o.lh || 1.18);
-  if (o.bottom) y -= lines.length * lh;
+  const sc = o.scale || 1, cap = capOf(f) * px, lh = cap * (o.lh || 1.18);
+  if (o.bottom) y -= lines.length * lh * sc;
   if (o.out) o.out.top = y;
-  ctx.save(); ctx.translate(x, y); ctx.scale(s * (o.sx || 1), s);
-  lines.forEach((l, i) => { if (o.shadow) txt(l, px * .03, (i + 1) * lh + px * .04, px, f, o.shadow); txt(l, 0, (i + 1) * lh, px, f, col); });
-  ctx.restore(); return y + lines.length * lh * s;
+  ctx.save(); ctx.translate(x, y); ctx.scale(sc * (o.sx || 1), sc);
+  lines.forEach((l, i) => {
+    const k = o.noSnap ? 1 : clamp((a - i * .05) / .26); if (k <= 0) return;
+    const base = (i + 1) * lh, rise = k < 1 ? (1 - eOutBack(k, 1.3)) * lh : 0;
+    ctx.save(); if (k < 1) { ctx.beginPath(); ctx.rect(-W, base - cap * 1.32, W * 4, cap * 1.32 + px * .3); ctx.clip(); }
+    if (o.shadow) txt(l, px * .03, base + px * .04 + rise, px, f, o.shadow); txt(l, 0, base + rise, px, f, col);
+    ctx.restore();
+  });
+  ctx.restore(); return y + lines.length * lh * sc;
+}
+// 0 while a phrase is being sung, easing to 1 once the next phrase has taken over
+function demote(st, i, t) { return i >= st.ci ? 0 : eInOut(clamp((t - st.ck[i + 1].t) / .3)); }
+const PAST = '#6f6c65';
+// the phrases of a line, stacked; past ones shrink and grey out smoothly (layout keeps its line breaks)
+function phraseStack(e, st, x, y, maxW, pxCur, pxPast, f, colCur, colPast, o = {}) {
+  st.ck.forEach((c, i) => {
+    if (i < (o.from || 0) || i >= (o.to ?? 1e9)) return; const a = e.t - c.t; if (a < 0) return; const d = demote(st, i, e.t);
+    y = bigType(o.map ? o.map(c.text) : c.text, x, y, maxW, pxCur, f, d > 0 ? mixc(colCur, colPast, d) : colCur, a, { ...(o.bt || {}), scale: lerp(1, pxPast / pxCur, d) }) + (o.gap ?? H * .014);
+  });
+  return y;
 }
 
 /* ============================ v4: phrases (meaning units, not per-word) ============================ */
@@ -701,6 +718,8 @@ function buildEvents(lines) {
     [L.scene, L.var, L.trans] = sh;
     L.words.forEach(w => { if (/^(toll|pay|black|bell|coin|well|fast|hell|wreck|slow|road|time|signs|line|free)$/.test(w.lc)) ev.push({ t: w.t, kind: w.lc, L }); });
   });
+  lines.forEach((L, i) => { const p = i ? lines[i - 1] : null; L.prevSame = p && p.scene === L.scene ? p : null; L.run0 = L.prevSame ? L.prevSame.run0 : L.t0; });
+  for (let i = lines.length - 1; i >= 0; i--) { const L = lines[i], n = lines[i + 1]; L.nextSame = n && n.scene === L.scene ? n : null; L.runEnd = L.nextSame ? L.nextSame.runEnd : L.tEnd; }
   ev.sort((a, b) => a.t - b.t); return ev;
 }
 // the price keeps rising through the song, shown inside scenes (receipts, displays, tables), never as a HUD
@@ -729,7 +748,7 @@ function drawRoad(e, R, o = {}) {
       const z = k * S2 - (tr % S2) + .8; if (z < .35) continue; const base = R.P(lx, 0, z), top = R.P(lx, 3.6, z), arm = R.P(hw + .3, 3.5, z); if (!base || !top || !arm) continue;
       ctx.strokeStyle = ca(PAL.steel, clamp(1.2 - z / 60)); ctx.lineWidth = Math.max(1, top[2] * .06); ctx.beginPath(); ctx.moveTo(base[0], base[1]); ctx.lineTo(top[0], top[1]); ctx.lineTo(arm[0], arm[1]); ctx.stroke();
       const r = Math.min(Math.max(2, arm[2] * .9), H * .028), near = clamp((z - .35) / 3), g = ctx.createRadialGradient(arm[0], arm[1], 0, arm[0], arm[1], r * 4); g.addColorStop(0, ca(PAL.amber, .75 * near)); g.addColorStop(1, ca(PAL.amber, 0)); ctx.fillStyle = g; ctx.fillRect(arm[0] - r * 4, arm[1] - r * 4, r * 8, r * 8);
-      if (spd > 10 && near > .2) { const tail = R.P(hw + .3, 3.5, z + spd * .09); if (tail) { ctx.strokeStyle = ca(PAL.amber, .55); ctx.lineWidth = Math.max(1, r * .6); ctx.beginPath(); ctx.moveTo(arm[0], arm[1]); ctx.lineTo(tail[0], tail[1]); ctx.stroke(); if (o.chroma) { ctx.strokeStyle = ca(PAL.red, .35); ctx.beginPath(); ctx.moveTo(arm[0] + r * .6, arm[1]); ctx.lineTo(tail[0] + r * .6, tail[1]); ctx.stroke(); } } }
+      const sa = clamp((spd - 8) / 12); if (sa > 0 && near > .2) { const tail = R.P(hw + .3, 3.5, z + spd * .09); if (tail) { ctx.strokeStyle = ca(PAL.amber, .55 * sa); ctx.lineWidth = Math.max(1, r * .6); ctx.beginPath(); ctx.moveTo(arm[0], arm[1]); ctx.lineTo(tail[0], tail[1]); ctx.stroke(); if (o.chroma) { ctx.strokeStyle = ca(PAL.red, .35 * sa); ctx.beginPath(); ctx.moveTo(arm[0] + r * .6, arm[1]); ctx.lineTo(tail[0] + r * .6, tail[1]); ctx.stroke(); } } }
       const pool = R.P(hw - .2, 0, z); if (pool && z > 4) { ctx.fillStyle = ca(PAL.amber, .06 * near); ctx.beginPath(); ctx.ellipse(pool[0], pool[1], Math.min(W * .2, pool[2] * 1.4), Math.min(H * .05, pool[2] * .35), 0, 0, 6.283); ctx.fill(); }
     }
   }
@@ -745,7 +764,7 @@ function gantrySign(R, z, lines, o = {}) {
   const t1 = R.P(cx - pw / 2 - .5, top + .15, z), t2 = R.P(cx + pw / 2 + .5, top + .15, z); if (t1 && t2) { ctx.beginPath(); ctx.moveTo(t1[0], t1[1]); ctx.lineTo(t2[0], t2[1]); ctx.stroke(); }
   ctx.fillStyle = dark ? '#161615' : PAL.paper; ctx.fillRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
   ctx.strokeStyle = dark ? PAL.paper : PAL.ink; ctx.lineWidth = Math.max(1, a[2] * .035); const ins = a[2] * .08; ctx.strokeRect(a[0] + ins, a[1] + ins, b[0] - a[0] - ins * 2, b[1] - a[1] - ins * 2);
-  if (o.drawText !== false) lines.forEach((l, i) => txt(l, (a[0] + b[0]) / 2, a[1] + (b[1] - a[1]) * ((i + .5) / lines.length) + capU * a[2] / 2, px, f, o.textCol || (dark ? PAL.paper : PAL.ink), 'center'));
+  if (o.drawText !== false && (o.textAlpha ?? 1) > 0) { ctx.save(); ctx.globalAlpha *= o.textAlpha ?? 1; lines.forEach((l, i) => txt(l, (a[0] + b[0]) / 2, a[1] + (b[1] - a[1]) * ((i + .5) / lines.length) + capU * a[2] / 2, px, f, o.textCol || (dark ? PAL.paper : PAL.ink), 'center')); ctx.restore(); }
   return { x0: a[0], y0: a[1], x1: b[0], y1: b[1], px, s: a[2] };
 }
 function coin(x, y, r, spin = 0, o = {}) {
@@ -833,26 +852,30 @@ const SCN = {};
 const SAFE = () => ({ x: Math.max(W * .047, 16 * DPR), y: Math.max(H * .065, 16 * DPR) });
 // SCENE 01 — night road, lyric phrases on overhead signs the camera passes under
 SCN.road = (e, L, st, v) => {
-  const tr = e.t * 5.5, R = roadCam({ hz: .54, camH: 1.05, camX: Math.sin(e.t * .3) * .15 });
-  drawRoad(e, R, { travel: tr, speed: 5 });
-  const n = st.ck.length;
-  for (let i = n - 1; i >= 0; i--) {
-    const c = st.ck[i], nt = i + 1 < n ? st.ck[i + 1].t : L.tEnd, dur = Math.max(.6, nt - c.t), a = e.t - c.t; if (a < -.4) continue;
-    const z = a < 0 ? lerp(38, 10, eOutCubic((a + .4) / .4)) : lerp(10, .45, eInCubic(clamp(a / (dur + .4)))); if (z < .5) continue;
-    const words = c.text.split(' '), freeDrop = v === 1 && i === n - 1 && /\bFREE$/.test(c.text);
-    const per = e.Z.P ? 2 : 3, lines = words.length <= per ? [c.text] : e.Z.P ? words.reduce((o, w, j) => { if (j % 2) o[o.length - 1] += ' ' + w; else o.push(w); return o; }, []) : [words.slice(0, Math.ceil(words.length / 2)).join(' '), words.slice(Math.ceil(words.length / 2)).join(' ')];
-    if (!freeDrop) { gantrySign(R, z, lines, { dark: i % 2 === 0 }); continue; }
+  const V = 6.5, R = roadCam({ hz: .54, camH: 1.05, camX: Math.sin(e.t * .3) * .15 });
+  drawRoad(e, R, { travel: e.t * V, speed: V });
+  const signs = [];
+  for (const LL of [L.prevSame, L, L.nextSame]) {
+    if (!LL) continue; const ck = chunksOf(LL);
+    ck.forEach((c, i) => { const nt = i + 1 < ck.length ? ck[i + 1].t : LL.tEnd; const drop = LL.var === 1 && i === ck.length - 1 && /\bFREE$/.test(c.text); signs.push({ c, pass: c.t + (drop ? 2.4 : clamp(nt - c.t, .9, 3) + .35), drop, dark: i % 2 === 0 }); });
+  }
+  signs.sort((p, q) => q.pass - p.pass);
+  for (const sg of signs) {
+    const c = sg.c, z = V * (sg.pass - e.t) + .45; if (z < .5 || z > 48) continue;
+    const a = e.t - c.t, lit = clamp((a + .03) / .12), words = c.text.split(' ');
+    const per = e.Z.P ? 2 : 3, lines = sg.drop || words.length <= per ? [c.text] : e.Z.P ? words.reduce((o, w, j) => { if (j % 2) o[o.length - 1] += ' ' + w; else o.push(w); return o; }, []) : [words.slice(0, Math.ceil(words.length / 2)).join(' '), words.slice(Math.ceil(words.length / 2)).join(' ')];
+    if (!sg.drop || a < 0) { gantrySign(R, z, lines, { dark: sg.dark, textAlpha: lit }); continue; }
     // FREE falls off, a price tag hangs behind it
-    const head = words.slice(0, -1).join(' '), g = gantrySign(R, z, [head + ' FREE'], { dark: true, drawText: false }); if (!g) continue;
-    const f = F.cond, full = mw(head + ' FREE', f), wh = mw(head + ' ', f) / full, px = g.px, midY = (g.y0 + g.y1) / 2 + capOf(f) * px / 2;
-    const tx0 = (g.x0 + g.x1) / 2 - full * px / 2; txt(head, tx0, midY, px, f, PAL.paper);
+    const head = words.slice(0, -1).join(' '), g = gantrySign(R, z, [c.text], { dark: true, drawText: false }); if (!g) continue;
+    const f = F.cond, full = mw(c.text, f), wh = mw(head + ' ', f) / full, px = g.px, midY = (g.y0 + g.y1) / 2 + capOf(f) * px / 2;
+    const tx0 = (g.x0 + g.x1) / 2 - full * px / 2; ctx.save(); ctx.globalAlpha = lit; txt(head, tx0, midY, px, f, PAL.paper); ctx.restore();
     const split = tx0 + wh * full * px, drop = clamp((a - .45) / .9);
     const tagY = g.y0 + (g.y1 - g.y0) * .3, sw = Math.sin(e.t * 3) * .12 * clamp(drop * 2);
     ctx.save(); ctx.translate(split + (g.x1 - split) * .5, g.y0); ctx.rotate(sw); ctx.strokeStyle = PAL.steelL; ctx.lineWidth = Math.max(1, g.s * .02); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, tagY - g.y0); ctx.stroke();
-    ctx.fillStyle = PAL.paper; ctx.beginPath(); ctx.moveTo(-g.s * .35, tagY - g.y0); ctx.lineTo(g.s * .35, tagY - g.y0); ctx.lineTo(g.s * .35, tagY - g.y0 + g.s * .5); ctx.lineTo(-g.s * .35, tagY - g.y0 + g.s * .5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = PAL.paper; ctx.fillRect(-g.s * .35, tagY - g.y0, g.s * .7, g.s * .5);
     txt('$ ?', 0, tagY - g.y0 + g.s * .36, g.s * .28, F.monoB, PAL.red, 'center'); ctx.restore();
     ctx.save(); const fy = drop * drop * H * 1.2, fr = drop * .9; ctx.translate(split, g.y0 + fy); ctx.rotate(fr); ctx.fillStyle = '#161615'; ctx.fillRect(0, 0, g.x1 - split, g.y1 - g.y0); ctx.strokeStyle = PAL.paper; ctx.lineWidth = Math.max(1, g.s * .035); ctx.strokeRect(g.s * .08, g.s * .08, g.x1 - split - g.s * .16, g.y1 - g.y0 - g.s * .16);
-    txt('FREE', (g.x1 - split) / 2, (g.y1 - g.y0) / 2 + capOf(f) * px / 2, px, f, PAL.paper, 'center'); ctx.restore();
+    ctx.globalAlpha = lit; txt('FREE', (g.x1 - split) / 2, (g.y1 - g.y0) / 2 + capOf(f) * px / 2, px, f, PAL.paper, 'center'); ctx.restore();
   }
   if (L.idx === 0 && e.t < L.t0 + 1.2) { const sf = SAFE(); ctx.globalAlpha = clamp(1 - (e.t - L.t0) / 1.2); txt('EVERY ROAD HAS A PRICE', sf.x, H - sf.y, Math.max(10 * DPR, H * .018), F.monoR, ca(PAL.paper, .7)); ctx.globalAlpha = 1; }
 };
@@ -864,7 +887,7 @@ function treeSegs(L) {
 }
 SCN.tree = (e, L, st, v) => {
   ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H); texFill('asphalt', 0, 0, W, H, .8);
-  const segs = treeSegs(L), M = Math.min(W, H) * 1.05, rot = (e.t - L.t0) * .06 * (v ? -1 : 1) + (v ? .25 : 0);
+  const segs = treeSegs(L), M = Math.min(W, H) * 1.05, rot = (e.t - L.run0) * .05;
   let g; if (v === 0) g = eOutCubic(clamp((e.t - L.t0) / Math.max(.8, (L.tEnd - L.t0) * .85))); else { const tc = st.ck.length > 1 ? st.ck[st.ck.length - 1].t : L.t0 + 1.5, drop = st.ck.findIndex(c => has(c, 'trees')); const td = drop >= 0 ? st.ck[drop].t + .35 : tc; g = 1 - eInOut(clamp((e.t - td) / 1.3)); }
   const cx = W * (e.Z.P ? .5 : .66), cy = H * .5;
   ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); ctx.lineCap = 'round';
@@ -883,9 +906,8 @@ SCN.tree = (e, L, st, v) => {
     }
   }
   ctx.restore();
-  if (v === 1 && g < .35) { const q = eOutCubic(clamp((.35 - g) / .35)); coin(cx, lerp(cy + M * .45, cy, q), M * lerp(.03, .1, q), e.t * 5); }
-  const sf = SAFE(); let y = sf.y + H * .04;
-  st.ck.forEach((c, i) => { const a = e.t - c.t; if (a < 0) return; const cur = i === st.ci; y = bigType(c.text, sf.x, y, W * (e.Z.P ? .9 : .42), H * (cur ? .1 : .055), F.disp, cur ? PAL.paper : ca(PAL.steel, .9), a) + H * .015; });
+  if (v === 1 && g < .35) { const q = eInOut(clamp((.35 - g) / .35)), M2 = Math.min(W, H); coin(lerp(cx, W * (e.Z.P ? .5 : .6), q), lerp(cy + M * .45, H * .52, q), M2 * lerp(.03, .22, q), e.t * 6); }
+  const sf = SAFE(); phraseStack(e, st, sf.x, sf.y + H * .04, W * (e.Z.P ? .9 : .42), H * .1, H * .055, F.disp, PAL.paper, PAST);
 };
 // SCENE 03 — coin → roulette, one red slot, BLACK swallows the frame, casino bell
 SCN.casino = (e, L, st, v) => {
@@ -893,7 +915,7 @@ SCN.casino = (e, L, st, v) => {
   const fast = v === 1, a = e.t - L.t0, rise = eInOut(clamp(a / (fast ? .6 : 1.3))), M = Math.min(W, H);
   const cx = W * (e.Z.P ? .5 : .6), cy = H * .52, R = M * .36 * lerp(2.8, 1, rise), spin = e.t * (fast ? 2.4 : 1.1);
   if (rise > .05) roulette(cx, cy, R, spin, { red: 7 });
-  const ca2 = spin * -1.7 + a * .6, cr = R * .9; coin(lerp(cx, cx + Math.cos(ca2) * cr, rise), lerp(cy, cy + Math.sin(ca2) * cr, rise), lerp(M * .22, M * .025, rise), e.t * (fast ? 14 : 7));
+  const ca2 = spin * -1.7 + a * .6, cr = R * .9; coin(lerp(cx, cx + Math.cos(ca2) * cr, rise), lerp(cy, cy + Math.sin(ca2) * cr, rise), lerp(M * .22, M * .025, rise), e.t * (fast ? 14 : 6));
   const bi = st.ck.findIndex(c => has(c, 'black')), bw = bi >= 0 ? st.ck[bi].words.find(w => w.lc === 'black') : null, ba = bw ? e.t - bw.t : -1;
   const belli = st.ck.findIndex(c => has(c, 'bell')), bellW = belli >= 0 ? st.ck[belli].words.find(w => w.lc === 'bell') : null, bella = bellW ? e.t - bellW.t : -1;
   const sf = SAFE();
@@ -906,7 +928,7 @@ SCN.casino = (e, L, st, v) => {
     if (!bellOn) { const px = fit('BLACK', F.disp, W * .92, H * .6); ctx.save(); ctx.translate(W / 2, H / 2 + capOf(F.disp) * px / 2); const s = snapK(ba); ctx.scale(s * 1.02, s); txt('BLACK', 0, 0, px, F.disp, PAL.paper, 'center'); ctx.restore(); }
     if (belli >= 0 && e.t >= st.ck[belli].t) {
       const sa = bella >= 0 ? bella : -1, swing = sa >= 0 ? Math.sin(sa * 14) * .25 * Math.exp(-sa * 2.5) : Math.sin(e.t * 3) * .03;
-      casinoBell(W * .5, H * .5, M * .2, swing, sa >= 0 ? clamp(1 - sa / .8) : 0);
+      casinoBell(W * .5, lerp(-M * .3, H * .5, eOutBack(clamp((e.t - st.ck[belli].t) / .32), 1.2)), M * .2, swing, sa >= 0 ? clamp(1 - sa / .8) : 0);
       bigType(st.ck[belli].text, sf.x, sf.y + H * .03, W * .5, H * .09, F.disp, PAL.paper, e.t - st.ck[belli].t);
       if (sa >= 0 && sa < .04 && S.flash) { ctx.fillStyle = 'rgba(255,250,240,.85)'; ctx.fillRect(0, 0, W, H); }
     }
@@ -946,7 +968,7 @@ SCN.well = (e, L, st, v) => {
 function travelOf(L, t, spdAt) { let d = 0; const n = 40, dt = (t - L.t0) / n; for (let i = 0; i < n; i++) d += spdAt(L.t0 + (i + .5) * dt) * dt; return d; }
 SCN.speed = (e, L, st, v) => {
   const ck = st.ck, fi = ck.findIndex(c => has(c, 'fast')), hi = ck.findIndex(c => has(c, 'hell'));
-  const spdAt = t => { let s2 = 7; if (fi >= 0 && t >= ck[fi].t) s2 = 18; if (hi >= 0) { const h0 = ck[hi].t; if (t >= h0 - .25 && t < h0) s2 = 3; else if (t >= h0) s2 = 18 + 55 * eOutCubic(clamp((t - h0) / .5)); } return s2; };
+  const spdAt = t => { let s2 = fi >= 0 ? lerp(7, 18, eOutCubic(clamp((t - ck[fi].t) / .45))) : 7; if (hi >= 0) { const h0 = ck[hi].t; if (t >= h0 - .3 && t < h0) s2 = lerp(s2, 3, eInOut((t - (h0 - .3)) / .3)); else if (t >= h0) s2 = 3 + 70 * eOutCubic(clamp((t - h0) / .6)); } return s2; };
   const spd = spdAt(e.t), tr = travelOf(L, e.t, spdAt) + L.t0 * 7;
   let fov = .95, sx = 1, hw = 2.2;
   if (v === 1) { const fa = ck.filter(c => has(c, 'fast')); if (fa[0] && e.t >= fa[0].t) sx = 1 + .28 * eOutBack(clamp((e.t - fa[0].t) / .25)); if (fa[1] && e.t >= fa[1].t) fov = .95 * (1 - .35 * eOutCubic(clamp((e.t - fa[1].t) / .3))); if (hi >= 0 && e.t >= ck[hi].t) hw = 2.2 + 14 * eInCubic(clamp((e.t - ck[hi].t) / 1.4)); }
@@ -955,7 +977,7 @@ SCN.speed = (e, L, st, v) => {
   drawRoad(e, R, { travel: tr, speed: spd, hw, chroma: spd > 30, lightGap: 7 });
   ctx.restore();
   const sf = SAFE();
-  if (st.ci >= 0) { const c = ck[st.ci], stretch = 1 + clamp((spd - 7) / 60) * .8; ctx.save(); if (spd > 30) { ctx.globalAlpha = .5; bigType(c.text, sf.x - W * .006, H * .16, W * .7, H * .15, F.disp, PAL.red, st.ca, { sx: stretch }); ctx.globalAlpha = 1; } bigType(c.text, sf.x, H * .16, W * .7, H * .15, F.disp, PAL.paper, st.ca, { sx: stretch }); ctx.restore(); }
+  if (st.ci >= 0) { const c = ck[st.ci], stretch = 1 + clamp((spd - 7) / 60) * .8; ctx.save(); if (spd > 25) { ctx.globalAlpha = .5 * clamp((spd - 25) / 15); bigType(c.text, sf.x - W * .006, H * .16, W * .7, H * .15, F.disp, PAL.red, st.ca, { sx: stretch }); ctx.globalAlpha = 1; } bigType(c.text, sf.x, H * .16, W * .7, H * .15, F.disp, PAL.paper, st.ca, { sx: stretch }); ctx.restore(); }
   const g = W - sf.x; txt(`${Math.round(spd * 2.4)} MPH`, g, H - sf.y, Math.max(10 * DPR, H * .022), F.monoB, spd > 30 ? PAL.red : ca(PAL.paper, .75), 'right');
 };
 // SCENE 05 — speedometer climbs, warnings, a beat of stillness, glass shatters
@@ -963,7 +985,8 @@ SCN.gauge = (e, L, st, v) => {
   ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H);
   const ck = st.ck, pi = ck.findIndex(c => has(c, 'push')), gi = ck.findIndex(c => has(c, 'gonna') && !has(c, 'wreck')), wi = ck.findIndex(c => has(c, 'wreck'));
   const still = gi >= 0 && e.t >= ck[gi].t && (wi < 0 || e.t < ck[wi].t), wrecked = wi >= 0 && e.t >= ck[wi].t, wa = wrecked ? e.t - ck[wi].t : 0;
-  const k = clamp((e.t - L.t0) / Math.max(1, (wi >= 0 ? ck[wi].t : L.tEnd) - L.t0)), val = still ? 150 : wrecked ? 160 : lerp(40, 150, eInCubic(k)) + (v ? 10 : 0);
+  const tStop = wi >= 0 ? ck[wi].t : L.tEnd, tHold = gi >= 0 ? ck[gi].t : tStop, climb = t => lerp(40, 150, eInCubic(clamp((t - L.t0) / Math.max(1, tStop - L.t0)))) + (v ? 10 : 0);
+  let val = climb(Math.min(e.t, tHold)); if (wrecked) val = lerp(val, 178, eOutCubic(clamp(wa / .12)));
   const vib = still ? 0 : clamp(val / 150) * (v ? 1.5 : 1) * (wrecked ? 0 : 1), M = Math.min(W, H);
   ctx.save(); ctx.translate(Math.sin(e.t * 83) * vib * M * .006, Math.cos(e.t * 71) * vib * M * .006);
   const cx = W * (e.Z.P ? .5 : .58), cy = H * .56, R = M * .36;
@@ -982,22 +1005,22 @@ SCN.gauge = (e, L, st, v) => {
 };
 // SCENE 06 / 11 — vintage road map, serif letter voice, a dot wearing the same route red
 SCN.map = (e, L, st, v) => {
-  const a = e.t - L.t0, pan = a * W * .012 + v * W * .05, unfold = v % 2 === 1 ? eOutCubic(clamp(a / .7)) : 1;
+  const a = e.t - L.t0, pan = (e.t - L.run0) * W * .012 + (v >= 2 ? W * .05 : 0), unfold = v % 2 === 1 && !L.prevSame ? eOutCubic(clamp(a / .7)) : 1;
   ctx.save(); if (unfold < 1) { ctx.translate(W / 2, H / 2); ctx.scale(lerp(.34, 1, unfold), 1); ctx.translate(-W / 2, -H / 2); }
   mapPaper(e, { pan });
   const heat = v % 2 === 1 ? eInOut(clamp(a / Math.max(1, L.tEnd - L.t0))) : 0, red = v >= 2 ? .6 : 0;
   ROUTES.forEach((r, i) => { routePath(r, pan * .6); ctx.strokeStyle = i === 0 ? ca(PAL.red, lerp(.55, 1, Math.max(heat, red))) : 'rgba(60,50,35,.55)'; ctx.lineWidth = Math.max(2, Math.min(W, H) * (i === 0 ? .008 + heat * .01 : .004)); ctx.stroke(); });
   shield(W * .3 - pan * .6, H * .72, Math.min(W, H) * .03, '122'); shield(W * .62 - pan * .6, H * .5, Math.min(W, H) * .03, '7');
   const towns = [['Mile 0', .12, .7], ['Last Exit', .45, .55], ['Toll Plaza', .78, .36]]; towns.forEach(([n2, x, y]) => { ctx.fillStyle = PAL.ink; circle(x * W - pan * .6, y * H, Math.min(W, H) * .008); txt(n2, x * W - pan * .6 + Math.min(W, H) * .015, y * H - Math.min(W, H) * .012, Math.min(W, H) * .028, F.serifI, PAL.ink); });
-  if (v % 2 === 1) { const ph = ((e.b / 4) % 1), u = ph < .5 ? ph * 2 : 2 - ph * 2, p = routePoint(ROUTES[0], .15 + u * .7, pan * .6); ctx.save(); ctx.shadowColor = PAL.red; ctx.shadowBlur = 20 * DPR; ctx.fillStyle = PAL.red; circle(p[0], p[1], Math.min(W, H) * .014); ctx.restore(); }
-  if (v >= 2) { const stamps = ['ACCIDENT', 'WARNING', 'DETOUR', 'TOLL']; stamps.forEach((s2, i) => { const t0 = L.t0 + (i + .5) * e.clk.spb * 2, sa = e.t - t0; if (sa < 0) return; const k = snapK(sa); ctx.save(); ctx.translate(W * (.52 + (i % 2) * .22), H * (.22 + i * .17)); ctx.rotate((hash(i + L.idx) - .5) * .3); ctx.scale(k, k); ctx.strokeStyle = PAL.red; ctx.lineWidth = Math.max(2, H * .006); const px = H * .05, tw = mw(s2, F.cond) * px; ctx.strokeRect(-tw / 2 - px * .3, -px * .9, tw + px * .6, px * 1.3); txt(s2, 0, 0, px, F.cond, PAL.red, 'center'); ctx.restore(); if (sa < .08 && S.flash) { ctx.fillStyle = ca(PAL.red, .12); ctx.fillRect(0, 0, W, H); } }); }
+  if (v % 2 === 1) { const ph = ((e.b / 4) % 1), u = ph < .5 ? ph * 2 : 2 - ph * 2, p = routePoint(ROUTES[0], .15 + u * .7, pan * .6); ctx.save(); ctx.globalAlpha = clamp(a / .4); ctx.shadowColor = PAL.red; ctx.shadowBlur = 20 * DPR; ctx.fillStyle = PAL.red; circle(p[0], p[1], Math.min(W, H) * .014); ctx.restore(); }
+  if (v >= 2) { const stamps = ['ACCIDENT', 'WARNING', 'DETOUR', 'TOLL']; stamps.forEach((s2, i) => { const t0 = L.run0 + (i + .5) * e.clk.spb * 2, sa = e.t - t0; if (sa < 0) return; const k = snapK(sa); ctx.save(); ctx.translate(W * (.52 + (i % 2) * .22), H * (.22 + i * .17)); ctx.rotate((hash(i + L.idx) - .5) * .3); ctx.scale(k, k); ctx.strokeStyle = PAL.red; ctx.lineWidth = Math.max(2, H * .006); const px = H * .05, tw = mw(s2, F.cond) * px; ctx.strokeRect(-tw / 2 - px * .3, -px * .9, tw + px * .6, px * 1.3); txt(s2, 0, 0, px, F.cond, PAL.red, 'center'); ctx.restore(); if (sa < .08 && S.flash) { ctx.fillStyle = ca(PAL.red, .12); ctx.fillRect(0, 0, W, H); } }); }
   ctx.restore();
   const sf = SAFE(), ck = st.ck; let y = sf.y + H * .03;
   ck.forEach((c, i) => {
     const ca2 = e.t - c.t; if (ca2 < 0) return; const last = i === ck.length - 1 && v % 2 === 0 && /\bSLOW$/.test(c.text);
     if (last) { const px = H * .065, lines = [c.text], tw = mw(c.text, F.cond) * px, x = W * (e.Z.P ? .1 : .56), yy = H * .62, s = snapK(ca2); ctx.save(); ctx.translate(x + tw / 2, yy); ctx.scale(s, s); ctx.fillStyle = PAL.ink; ctx.fillRect(-tw / 2 - px * .5, -px * 1.1, tw + px, px * 1.6); ctx.strokeStyle = PAL.paper; ctx.lineWidth = Math.max(1, px * .06); ctx.strokeRect(-tw / 2 - px * .38, -px * .98, tw + px * .76, px * 1.36); txt(lines[0], 0, px * .1, px, F.cond, PAL.paper, 'center'); ctx.restore(); return; }
     const big = has(c, 'mama') || has(c, 'said'), px = H * (big ? .12 : .06);
-    y = bigType(sent(c.text), sf.x, y, W * (e.Z.P ? .88 : .5), px, big ? F.serif : F.serifI, i === st.ci ? PAL.ink : ca(PAL.ink, .55), ca2, { lh: 1.05 }) + H * .012;
+    y = bigType(sent(c.text), sf.x, y, W * (e.Z.P ? .88 : .5), px, big ? F.serif : F.serifI, mixc(PAL.ink, '#8d877a', demote(st, i, e.t)), ca2, { lh: 1.05 }) + H * .012;
   });
 };
 // odometer that reads the time, rolling toward midnight
@@ -1012,7 +1035,7 @@ SCN.odo = (e, L, st, v) => {
   odometer(cx, cy, w, h, [...digits], rollK, { prev: [...prev], roll, col: v ? PAL.red : PAL.paper });
   txt('ODOMETER · TIME', cx - w / 2, cy - h * .95, Math.max(9 * DPR, M * .025), F.monoR, ca(PAL.paper, .6)); txt(`BALANCE ${tollValue(e.t)}`, cx + w / 2, cy - h * .95, Math.max(9 * DPR, M * .025), F.monoR, v ? PAL.red : ca(PAL.amber, .8), 'right');
   ctx.strokeStyle = PAL.amber; ctx.lineWidth = Math.max(2, M * .004); ctx.beginPath(); ctx.moveTo(cx - w / 2, cy + h * .95); ctx.lineTo(cx - w / 2 + w * clamp((e.t - L.t0) / Math.max(1, L.tEnd - L.t0)), cy + h * .95); ctx.stroke();
-  const sf = SAFE(); ck.forEach((c, i) => { const a = e.t - c.t; if (a < 0) return; const up = i < (bi >= 0 ? bi : ck.length); bigType(c.text, sf.x, up ? sf.y + H * .03 + (i === 0 ? 0 : H * .07) : cy + h * 1.15, W * .88, H * (i === st.ci ? .075 : .05), F.disp, i === st.ci ? PAL.paper : ca(PAL.steel, .9), a); });
+  const sf = SAFE(), split = bi >= 0 ? bi : ck.length; phraseStack(e, st, sf.x, sf.y + H * .03, W * .88, H * .075, H * .05, F.disp, PAL.paper, PAST, { to: split }); phraseStack(e, st, sf.x, cy + h * 1.15, W * .88, H * .075, H * .05, F.disp, PAL.paper, PAST, { from: split });
 };
 // SCENE 07 / 12 — toll plaza approach, LED board, barrier drops
 function tollPlaza(R, zg, o = {}) {
@@ -1044,7 +1067,7 @@ SCN.toll = (e, L, st, v) => {
 // OH-OH: letters pass like road pillars, cut on every beat
 SCN.pillars = (e, L, st, v) => {
   ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H);
-  const frame = ((e.bi % 3) + 3) % 3, R = roadCam({ hz: [.5, .62, .42][frame], camH: [1, .6, 1.8][frame], camX: [0, -1.5, 1.2][frame], fov: [.95, .75, 1.15][frame] });
+  const frame = ((Math.floor(e.b / 2) % 3) + 3) % 3, R = roadCam({ hz: [.5, .62, .42][frame], camH: [1, .6, 1.8][frame], camX: [0, -1.5, 1.2][frame], fov: [.95, .75, 1.15][frame] });
   drawRoad(e, R, { travel: e.t * 12, speed: 12, lights: false, hw: 2 });
   const letters = []; st.ck.forEach(c => { for (const ch of c.text.replace(/[^A-Z]/g, '')) letters.push(ch); });
   const bt = e.clk.spb, age = e.t - L.t0, n = Math.floor(age / bt);
@@ -1077,7 +1100,7 @@ SCN.signs = (e, L, st, v) => {
     const sp = behind ? 4 : 9, cycle = 34;
     for (let i = 26; i >= 0; i--) {
       const zz = ((hash(i * 3) * cycle - e.t * sp) % cycle + cycle) % cycle + .7, hx = hash(i * 7) - .5, x = Math.sign(hx) * (2.1 + Math.abs(hx) * 11), y = 1.3 + hash(i * 11) * 2.5, wU = .9 + hash(i) * 1.4, hU = .55 + hash(i * 5) * .35;
-      if (zz < (behind ? 2.6 : 1.3)) continue; const a = R.P(x - wU / 2, y + hU / 2, zz), b = R.P(x + wU / 2, y - hU / 2, zz), base = R.P(x, 0, zz); if (!a || !b || !base) continue;
+      const al = clamp((cycle - zz) / 5) * clamp((zz - (behind ? 2.4 : 1.2)) / (behind ? 1.6 : .6)); if (al <= 0) continue; ctx.globalAlpha = al; const a = R.P(x - wU / 2, y + hU / 2, zz), b = R.P(x + wU / 2, y - hU / 2, zz), base = R.P(x, 0, zz); if (!a || !b || !base) continue;
       ctx.strokeStyle = ca(PAL.steel, .8); ctx.lineWidth = Math.max(1, a[2] * .05); ctx.beginPath(); ctx.moveTo((a[0] + b[0]) / 2, b[1]); ctx.lineTo(base[0], base[1]); ctx.stroke();
       if (behind) { ctx.fillStyle = '#3a3935'; ctx.fillRect(a[0], a[1], b[0] - a[0], b[1] - a[1]); ctx.fillStyle = '#23221f'; for (const bx of [.2, .8]) circle(a[0] + (b[0] - a[0]) * bx, (a[1] + b[1]) / 2, Math.max(1, a[2] * .03)); continue; }
       const odd = hash(i * 13) < red * .6, bg = odd ? PAL.red : i % 3 === 0 ? PAL.paper : '#151514', fg = bg === PAL.paper ? PAL.ink : PAL.paper;
@@ -1086,9 +1109,10 @@ SCN.signs = (e, L, st, v) => {
       ctx.save(); if (odd && hash(i) > .5) { ctx.translate((a[0] + b[0]) / 2, 0); ctx.scale(-1, 1); ctx.translate(-(a[0] + b[0]) / 2, 0); } txt(word, a[0] + (b[0] - a[0]) * .08, a[1] + (b[1] - a[1]) * .48, px, F.cond, fg); ctx.restore();
       arrowGlyph(b[0] - (b[0] - a[0]) * .16, a[1] + (b[1] - a[1]) * .7, (b[1] - a[1]) * .4, hash(i * 17) * 6.283 + e.t * (odd ? 2 : 0), fg);
     }
+    ctx.globalAlpha = 1; let sy = sf.y + H * .03;
     ck.forEach((c, i) => { const a = e.t - c.t; if (a < 0) return; const hero = !behind && i === ck.length - 1 && has(c, 'signs');
       if (hero) { const px = H * .09, tw = mw(c.text, F.cond) * px, x = W - sf.x - tw - px, y = H * .56, s = snapK(a); ctx.save(); ctx.translate(x + tw / 2, y); ctx.scale(s, s); ctx.fillStyle = PAL.paper; ctx.fillRect(-tw / 2 - px * .5, -px * 1.05, tw + px, px * 1.55); ctx.strokeStyle = PAL.ink; ctx.lineWidth = Math.max(2, px * .06); ctx.strokeRect(-tw / 2 - px * .38, -px * .93, tw + px * .76, px * 1.31); txt(c.text, 0, px * .12, px, F.cond, PAL.ink, 'center'); ctx.restore(); return; }
-      bigType(c.text, sf.x, sf.y + H * .03 + i * H * .12, W * .6, H * (i === st.ci ? .1 : .07), F.disp, i === st.ci ? PAL.paper : ca(PAL.steel, .9), a); });
+      const d = demote(st, i, e.t); sy = bigType(c.text, sf.x, sy, W * .6, H * .1, F.disp, mixc(PAL.paper, PAST, d), a, { scale: lerp(1, .7, d) }) + H * .012; });
     return;
   }
   // v2 / v3: one sign, its content flips with every phrase; the last one points forward
@@ -1108,40 +1132,48 @@ SCN.signs = (e, L, st, v) => {
 // SCENE 12 — receipt printer: PAY PAY PAY, total = your time
 SCN.receipt = (e, L, st, v) => {
   ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H); texFill('asphalt', 0, 0, W, H, .5);
-  const ck = st.ck, M = Math.min(W, H), pw = e.Z.P ? W * .8 : Math.min(W * .36, H * .62), px0 = e.Z.P ? W * .1 : W * .55, slotY = H * .12, m = pw * .05;
-  const rows = [['TOLL RECEIPT', 'hdr'], [`LANE 07 · ${SONG.bpm} BPM`, 'sub'], ['', 'perf']];
-  ck.forEach((c, i) => { if (e.t < c.t) return; if (has(c, 'pay')) { const n = 2 + Math.floor(clamp((e.t - c.t) / 1.2) * 4) + (v ? 2 : 0); for (let j = 0; j < n; j++) rows.push(['PAY', 'pay', c.t + j * .1]); } else rows.push([c.text, 'line', c.t]); });
-  const last = ck[ck.length - 1], done = last && has(last, 'toll') && e.t >= last.t + .4;
-  if (done) { rows.push(['', 'perf']); rows.push(['TOTAL', 'tot']); rows.push([v ? 'PAY NOW' : 'YOUR TIME', 'your']); if (v) rows.push(['', 'bar']); }
+  const ck = st.ck, pw = e.Z.P ? W * .8 : Math.min(W * .36, H * .62), px0 = e.Z.P ? W * .1 : W * .55, slotY = H * .12, m = pw * .05;
+  const rows = [['TOLL RECEIPT', 'hdr', -1], [`LANE 07 · ${SONG.bpm} BPM`, 'sub', -1], ['', 'perf', -1]];
+  for (const LL of [L.prevSame, L]) {
+    if (!LL) continue; const cks = chunksOf(LL);
+    cks.forEach(c => { if (has(c, 'pay')) { const n = 6 + (LL.var ? 2 : 0); for (let j = 0; j < n; j++) rows.push(['PAY', 'pay', c.t + j * .16]); } else rows.push([c.text, 'line', c.t]); });
+    const last = cks[cks.length - 1];
+    if (last && has(last, 'toll')) { const dt = last.t + .4; rows.push(['', 'perf', dt], ['TOTAL', 'tot', dt + .12], [LL.var ? 'PAY NOW' : 'YOUR TIME', 'your', dt + .3]); if (LL.var) rows.push(['', 'bar', dt + .5]); }
+  }
   const rh = { hdr: m * 2.2, sub: m * 1.4, perf: m * 1.2, pay: m * 3.4, line: m * 2, tot: m * 2, your: m * 3.2, bar: m * 5 };
-  const total = rows.reduce((a, r) => a + rh[r[1]], 0) + m * 2, scroll = Math.max(0, total - (H - slotY - H * .05)), len = total;
-  ctx.fillStyle = '#1d1c1a'; rr(px0 - pw * .08, slotY - H * .05, pw * 1.16, H * .07, H * .012); ctx.fill(); ctx.fillStyle = '#050505'; ctx.fillRect(px0 - pw * .02, slotY - H * .006, pw * 1.04, H * .012);
-  ctx.save(); ctx.beginPath(); ctx.rect(0, slotY, W, H); ctx.clip(); ctx.translate(0, slotY - scroll);
-  ctx.fillStyle = pat('paper'); ctx.fillRect(px0, -H, pw, len + H);
-  let y = m; for (const [s2, kind] of rows) {
-    const h = rh[kind];
-    if (kind === 'perf') { ctx.strokeStyle = PAL.amber; ctx.lineWidth = Math.max(1, m * .12); ctx.setLineDash([m * .5, m * .4]); ctx.beginPath(); ctx.moveTo(px0 + m, y + h / 2); ctx.lineTo(px0 + pw - m, y + h / 2); ctx.stroke(); ctx.setLineDash([]); }
-    else if (kind === 'bar') { let x = px0 + m, i = 0; while (x < px0 + pw - m) { const bw = (1 + Math.floor(hash(i * 7) * 3)) * Math.max(1, m * .14); if (i % 2 === 0) { ctx.fillStyle = PAL.ink; ctx.fillRect(x, y, bw, h * .8); } x += bw; i++; } }
-    else { const px = { hdr: m * 1.3, sub: m * .8, pay: m * 3, line: m * 1.05, tot: m * 1.3, your: m * 2.4 }[kind], f = kind === 'pay' || kind === 'your' ? F.disp : kind === 'line' ? F.monoB : F.mono; const col = kind === 'pay' || kind === 'your' ? PAL.red : PAL.ink; const fitPx = Math.min(px, (pw - m * 2) / Math.max(.1, mw(s2, f))); txt(s2, kind === 'hdr' || kind === 'your' ? px0 + pw / 2 : px0 + m, y + h * .72, fitPx, f, col, kind === 'hdr' || kind === 'your' ? 'center' : 'left'); if (kind === 'tot') txt(tollValue(e.t), px0 + pw - m, y + h * .72, m * 1.1, F.mono, PAL.ink, 'right'); }
-    y += h;
+  const vis = rows.filter(r => r[2] <= e.t).map(r => [r[0], r[1], r[2] < 0 ? 1 : eOutCubic(clamp((e.t - r[2]) / .14))]);
+  let len = m * 1.6; for (const r of vis) len += rh[r[1]] * r[2];
+  ctx.save(); ctx.beginPath(); ctx.rect(0, slotY, W, H - slotY); ctx.clip();
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fillRect(px0 + pw * .03, slotY, pw, len + m * .4);
+  ctx.fillStyle = pat('paper'); ctx.fillRect(px0, slotY, pw, len);
+  let y = slotY + m * .6;
+  for (let i = vis.length - 1; i >= 0 && y < H; i--) {
+    const [s2, kind, g] = vis[i], hf = rh[kind], h = hf * g; if (h < .5) continue;
+    const top = y + h - hf; ctx.save(); ctx.beginPath(); ctx.rect(px0, y, pw, h); ctx.clip();
+    if (kind === 'perf') { ctx.strokeStyle = PAL.amber; ctx.lineWidth = Math.max(1, m * .12); ctx.setLineDash([m * .5, m * .4]); ctx.beginPath(); ctx.moveTo(px0 + m, top + hf / 2); ctx.lineTo(px0 + pw - m, top + hf / 2); ctx.stroke(); ctx.setLineDash([]); }
+    else if (kind === 'bar') { let x = px0 + m, j = 0; while (x < px0 + pw - m) { const bw = (1 + Math.floor(hash(j * 7) * 3)) * Math.max(1, m * .14); if (j % 2 === 0) { ctx.fillStyle = PAL.ink; ctx.fillRect(x, top + hf * .1, bw, hf * .8); } x += bw; j++; } }
+    else { const px = { hdr: m * 1.3, sub: m * .8, pay: m * 3, line: m * 1.05, tot: m * 1.3, your: m * 2.4 }[kind], f = kind === 'pay' || kind === 'your' ? F.disp : kind === 'line' ? F.monoB : F.mono, col = kind === 'pay' || kind === 'your' ? PAL.red : PAL.ink, fitPx = Math.min(px, (pw - m * 2) / Math.max(.1, mw(s2, f))), mid = kind === 'hdr' || kind === 'your'; txt(s2, mid ? px0 + pw / 2 : px0 + m, top + hf * .72, fitPx, f, col, mid ? 'center' : 'left'); if (kind === 'tot') txt(tollValue(e.t), px0 + pw - m, top + hf * .72, m * 1.1, F.mono, PAL.ink, 'right'); }
+    ctx.restore(); y += h;
   }
   ctx.restore();
+  ctx.fillStyle = '#1d1c1a'; rr(px0 - pw * .08, slotY - H * .05, pw * 1.16, H * .07, H * .012); ctx.fill(); ctx.fillStyle = '#050505'; ctx.fillRect(px0 - pw * .02, slotY - H * .006, pw * 1.04, H * .012);
   const sf = SAFE(); if (!e.Z.P && st.ci >= 0) bigType(ck[st.ci].text, sf.x, sf.y + H * .03, W * .42, H * .1, F.disp, PAL.paper, st.ca);
 };
 // SCENE 13 — perfect straight road from above; crossing the line turns the world 90°, then we fall
 SCN.line = (e, L, st, v) => {
   ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H);
-  const ck = st.ck, li = v === 2 ? ck.findIndex(c => has(c, 'line')) : -1, la2 = li >= 0 ? e.t - ck[li].t : -1;
-  const turned = v === 3 || la2 >= .05, rotK = v === 3 ? 1 : la2 >= 0 ? eOutBack(clamp((la2 - .05) / .35), 1.4) : 0, M = Math.max(W, H);
-  ctx.save(); ctx.translate(W / 2, v <= 1 ? H * .64 : H / 2); ctx.rotate(rotK * Math.PI / 2);
-  const rw = Math.min(W, H) * (v <= 1 ? .4 : .32), heat = v === 1 ? clamp((e.t - L.t0) / Math.max(1, L.tEnd - L.t0)) : v >= 2 ? .6 : 0;
+  const ck = st.ck, M = Math.max(W, H); let crossT = null;
+  for (const LL of [L.prevSame, L]) { if (!LL || LL.var !== 2) continue; const c2 = chunksOf(LL).find(c => has(c, 'line')); if (c2) crossT = c2.t; }
+  if (v === 3 && crossT == null) crossT = L.t0 - 1;
+  const la2 = crossT != null ? e.t - crossT : -1, turned = la2 >= .05, rotK = la2 >= 0 ? eOutBack(clamp((la2 - .05) / .35), 1.4) : 0;
+  ctx.save(); ctx.translate(W / 2, H * .6); ctx.rotate(rotK * Math.PI / 2);
+  const rw = Math.min(W, H) * .38, heat = v === 0 ? 0 : v === 1 ? clamp((e.t - L.t0) / Math.max(1, L.tEnd - L.t0)) : 1;
   ctx.fillStyle = PAL.road; ctx.fillRect(-M, -rw / 2, M * 2, rw); ctx.save(); ctx.translate(-M, -rw / 2); texFill('asphalt', 0, 0, M * 2, rw, .9); ctx.restore();
   ctx.fillStyle = ca(PAL.steel, .8); ctx.fillRect(-M, -rw / 2, M * 2, Math.max(2, rw * .012)); ctx.fillRect(-M, rw / 2 - Math.max(2, rw * .012), M * 2, Math.max(2, rw * .012));
   const lc = heat > 0 ? mixc(PAL.amber, PAL.red, heat) : PAL.amber; ctx.save(); if (heat > .3) { ctx.shadowColor = PAL.red; ctx.shadowBlur = rw * .08 * heat * (1 + .3 * Math.sin(e.t * 20)); } ctx.fillStyle = lc; ctx.fillRect(-M, -rw * .025, M * 2, rw * .018); ctx.fillRect(-M, rw * .007, M * 2, rw * .018); ctx.restore();
-  let carX = lerp(-W * .45, -W * .05, clamp((e.t - L.t0) / Math.max(1, L.tEnd - L.t0))), carY = rw * .22;
-  if (v === 2 && li >= 0) { const cross = clamp((e.t - (ck[li].t - .35)) / .4); carY = lerp(rw * .22, -rw * .22, eInOut(cross)); }
-  if (v === 3) carY = -rw * .22;
-  let fallY = 0; if (turned) { const fa = v === 3 ? e.t - L.t0 + 1 : la2; fallY = fa * fa * H * .35; }
+  let carX = lerp(-W * .45, -W * .05, clamp((e.t - L.run0) / Math.max(1, L.runEnd - L.run0))), carY = rw * .22;
+  if (crossT != null) carY = lerp(rw * .22, -rw * .22, eInOut(clamp((e.t - (crossT - .35)) / .4)));
+  const fallY = turned ? la2 * la2 * H * .35 : 0;
   const tile = M * 2; ctx.save(); ctx.translate(-((fallY) % (rw * .6)), 0); for (let x = -M; x < M; x += rw * .6) { ctx.fillStyle = 'rgba(255,255,255,.035)'; ctx.fillRect(x, -rw / 2, rw * .02, rw); } ctx.restore(); void tile;
   const g = ctx.createRadialGradient(carX, carY, 0, carX, carY, rw * .25); g.addColorStop(0, ca(PAL.amber, .9)); g.addColorStop(1, ca(PAL.amber, 0)); ctx.fillStyle = g; ctx.fillRect(carX - rw * .25, carY - rw * .25, rw * .5, rw * .5);
   ctx.fillStyle = PAL.paper; circle(carX + rw * .03, carY - rw * .035, rw * .012); circle(carX + rw * .03, carY + rw * .035, rw * .012);
@@ -1150,11 +1182,13 @@ SCN.line = (e, L, st, v) => {
   const sf = SAFE();
   ck.forEach((c, i) => {
     const a = e.t - c.t; if (a < 0) return;
-    if (v <= 1) { const serif = v === 0, px = H * (i === st.ci ? .075 : .045); bigType(serif ? sent(c.text) : c.text, sf.x, sf.y + H * .03 + i * H * .09, W * .8, px, serif ? F.serifI : F.monoB, i === st.ci ? (heat > .3 ? PAL.red : PAL.paper) : ca(PAL.steel, .9), a); return; }
+    const d = demote(st, i, e.t);
+    if (v <= 1) return;
     let y = sf.y + H * .05 + i * H * .12;
     if (turned) { if (i > st.ci) return; const a2 = i < st.ci ? e.t - ck[i + 1].t : 0; y = H * .4 - (st.ci - i) * H * .13 - (a2 * a2 * H * 1.4 + a2 * H * .5); if (y < -H * .3) return; }
-    bigType(c.text, sf.x, y, W * .88, H * (i === st.ci ? .12 : .07), F.disp, i === st.ci ? PAL.paper : ca(PAL.steel, .9), a);
+    bigType(c.text, sf.x, y, W * .88, H * .12, F.disp, mixc(PAL.paper, PAST, d), a, { scale: lerp(1, .6, d) });
   });
+  if (v <= 1) phraseStack(e, st, sf.x, sf.y + H * .03, W * .8, H * .075, H * .045, v === 0 ? F.serifI : F.monoB, heat > .3 ? PAL.red : PAL.paper, PAST, { map: v === 0 ? sent : null, gap: H * .01 });
 };
 // SCENE 14 — everything from the warnings comes back at once, cut on half beats
 SCN.collage = (e, L, st, v) => {
@@ -1186,13 +1220,13 @@ SCN.ash = (e, L, st, v) => {
     }
   });
   ctx.globalAlpha = 1;
-  const sf = SAFE(); st.ck.forEach((c, i) => { const a = e.t - c.t; if (a < 0) return; bigType(c.text, sf.x, sf.y + H * .03 + i * H * .13, W * .7, H * (i === st.ci ? .11 : .07), F.disp, i === st.ci ? PAL.red : ca(PAL.paper, .5), a); });
+  const sf = SAFE(); phraseStack(e, st, sf.x, sf.y + H * .03, W * .7, H * .11, H * .07, F.disp, PAL.red, PAL.steel);
 };
 // SCENE 15 — final toll: TOLL DUE, the word fills the frame, a coin, PAID, next toll, the road again
 SCN.final = (e, L, st, v) => {
   const ck = st.ck, M = Math.min(W, H), tw = L.words.find(w => w.lc === 'toll') || L.words[L.words.length - 1], tt = tw ? tw.t : L.tEnd, a = e.t - tt;
   const coinT = tt + 1.5, clink = coinT + .8, passT = clink + 2.6, roadT = passT + 1.4, fadeT = roadT + 4;
-  if (e.t >= roadT) { const R = roadCam({ hz: .54, camH: 1.05 }); drawRoad(e, R, { travel: e.t * 5.5, speed: 5.5 }); const fa = clamp((e.t - fadeT) / 2.2); if (e.t > roadT && e.t < roadT + 3) { const z = lerp(30, 8, clamp((e.t - roadT) / 3)); gantrySign(R, z, ['NEXT TOLL 2.4 MI'], { dark: true }); } ctx.fillStyle = `rgba(0,0,0,${fa})`; ctx.fillRect(0, 0, W, H); if (fa > .6) { ctx.globalAlpha = clamp((fa - .6) / .4); txt('EVERY ROAD HAS A PRICE', W / 2, H / 2, Math.max(11 * DPR, H * .024), F.monoR, PAL.paper, 'center'); ctx.globalAlpha = 1; } return; }
+  if (e.t >= roadT) { const R = roadCam({ hz: .54, camH: 1.05 }); drawRoad(e, R, { travel: e.t * 5.5, speed: 5.5 }); const fa = clamp((e.t - fadeT) / 2.2); { const z = 5.5 * (roadT + 4.6 - e.t) + .45; if (z > .5) gantrySign(R, z, ['NEXT TOLL 2.4 MI'], { dark: true }); } ctx.fillStyle = `rgba(0,0,0,${fa})`; ctx.fillRect(0, 0, W, H); if (fa > .6) { ctx.globalAlpha = clamp((fa - .6) / .4); txt('EVERY ROAD HAS A PRICE', W / 2, H / 2, Math.max(11 * DPR, H * .024), F.monoR, PAL.paper, 'center'); ctx.globalAlpha = 1; } return; }
   const pass = clamp((e.t - passT) / 1.4), zg = lerp(7.5, .4, eInCubic(pass));
   const R = roadCam({ hz: .5, camH: 1.1, fov: .9 });
   drawRoad(e, R, { travel: 0, speed: 0, lights: false, edge: ca(PAL.red, .6), lineCol: PAL.red });
@@ -1204,32 +1238,32 @@ SCN.final = (e, L, st, v) => {
   if (e.t >= coinT - .9 && e.t < clink + .5 && pl) { const slot = R.P(-1.2, 1.2, zg + .4), k = clamp((e.t - (coinT - .9)) / 1.7); if (slot) { coin(slot[0], lerp(-M * .1, slot[1], eInCubic(k)), M * .045, e.t * 11); ctx.fillStyle = '#050505'; ctx.fillRect(slot[0] - M * .03, slot[1] - M * .004, M * .06, M * .008); } }
   if (e.t >= clink && e.t < clink + .08 && S.flash) { ctx.fillStyle = ca(PAL.amber, .35); ctx.fillRect(0, 0, W, H); }
   const sf = SAFE();
-  if (a < 0 && st.ci >= 0) { const c = ck[st.ci], out = {}; bigType(c.text, sf.x, H - sf.y, W * .75, H * .12, F.disp, has(c, 'pay') ? PAL.red : PAL.paper, e.t - c.t, { shadow: 'rgba(0,0,0,.7)', bottom: true, out }); if (st.ci > 0) bigType(ck[st.ci - 1].text, sf.x, out.top - H * .015, W * .75, H * .06, F.disp, ca(PAL.paper, .6), 1, { shadow: 'rgba(0,0,0,.7)', bottom: true, noSnap: true }); }
+  if (a < 0 && st.ci >= 0) { const c = ck[st.ci], out = {}; bigType(c.text, sf.x, H - sf.y, W * .75, H * .12, F.disp, has(c, 'pay') ? PAL.red : PAL.paper, e.t - c.t, { shadow: 'rgba(0,0,0,.7)', bottom: true, out }); if (st.ci > 0) { const d = demote(st, st.ci - 1, e.t); bigType(ck[st.ci - 1].text, sf.x, out.top - H * .015, W * .75, H * .12, F.disp, mixc(PAL.paper, '#9b968c', d), 1, { shadow: 'rgba(0,0,0,.7)', bottom: true, noSnap: true, scale: lerp(1, .5, d) }); } }
   else if (a < 1.4) { const px = fit('TOLL', F.disp, W * .96, H * .8), s = snapK(a); ctx.save(); ctx.translate(W / 2, H / 2 + capOf(F.disp) * px / 2); ctx.scale(s, s); txt('TOLL', 0, 0, px, F.disp, PAL.red, 'center'); ctx.restore(); }
 };
 
 /* ============================ v4: camera, transitions, texture ============================ */
 function cam(e, L, st, role, tk) {
-  const kickAge = ((e.b % 2) + 2) % 2 * e.clk.spb, big = e.kind === 'chorus' || e.kind === 'final' || e.kind === 'post';
-  const kb = Math.floor(e.b / 2), punch = Math.exp(-kickAge * 14) * (big ? .035 : .018) * (S.flash ? 1 : .4);
-  const snapX = big ? (hash(kb * 7 + L.idx) - .5) * W * .012 : 0, snapY = big ? (hash(kb * 13 + L.idx) - .5) * H * .01 : 0;
-  const drift = 1 + .03 * eInOut(clamp((e.t - L.t0) / Math.max(1, L.tEnd - L.t0)));
-  let z = (1 + punch) * drift, x = snapX, y = snapY, r = 0;
+  const big = e.kind === 'chorus' || e.kind === 'final' || e.kind === 'post', spb = e.clk.spb;
+  const kb = Math.floor(e.b / 2), ka = (e.b - kb * 2) * spb, fl = S.flash ? 1 : .4;
+  const env = ka < .03 ? eOutCubic(ka / .03) : Math.exp(-(ka - .03) * 7), punch = env * (big ? .016 : .006) * fl;
+  const off = k => [(hash(k * 7 + 3) - .5) * W * .016, (hash(k * 13 + 5) - .5) * H * .014], g = eOutCubic(clamp(ka / .16)), o0 = off(kb - 1), o1 = off(kb), amp = big ? fl : 0;
+  let x = lerp(o0[0], o1[0], g) * amp, y = lerp(o0[1], o1[1], g) * amp, r = 0;
+  const run0 = L.run0 ?? L.t0, runEnd = L.runEnd ?? L.tEnd, z = (1 + .045 * eInOut(clamp((e.t - run0) / Math.max(1, runEnd - run0)))) * (1 + punch);
   if (e.kind === 'bridge') r = Math.sin(e.t * .4) * .004;
-  if (role === 'new') { const q = eOutCubic(tk); if (L.trans === 'whip') x += (1 - q) * W * 1.1; else if (L.trans === 'rise') y -= (1 - q) * H; else if (L.trans === 'drop') y += (1 - q) * H * .9; else if (L.trans === 'hard') z *= 1 + (1 - clamp(tk / .35)) * .05; }
-  const weave = S.flash ? (hash(Math.floor(e.t * 24)) - .5) * DPR * .8 : 0;
-  ctx.translate(W / 2 + x, H / 2 + y + weave); ctx.rotate(r); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2);
+  if (role === 'new') { const q = eOutCubic(tk); if (L.trans === 'whip') x += (1 - q) * W * 1.1; else if (L.trans === 'rise') y -= (1 - q) * H; else if (L.trans === 'drop') y += (1 - q) * H * .9; }
+  ctx.translate(W / 2 + x, H / 2 + y); ctx.rotate(r); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2);
 }
 function drawShot(e, L, role, tk) {
   const cs = chunkState(L, e.t), st = { ...cs, k: clamp((e.t - L.t0) / Math.max(.3, L.tEnd - L.t0)) };
   ctx.save(); ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H); cam(e, L, st, role, tk); (SCN[L.scene] || SCN.road)(e, L, st, L.var || 0); ctx.restore();
 }
-const ANCHOR = { casino: [.5, .5, .2], well: [.5, .5, .2], odo: [.56, .52, .3], gauge: [.58, .56, .36] };
+const ANCHOR = { casino: [.6, .52, .25], well: [.5, .5, .2], odo: [.56, .52, .3], gauge: [.58, .56, .36] };
 const tbuf = document.createElement('canvas');
 function composite(e, L, k) {
   const type = L.trans, q = eInOut(k); ctx.save();
   switch (type) {
-    case 'match': { const an = ANCHOR[L.scene] || [.5, .5, .2], cx = an[0] * W, cy = an[1] * H, r0 = an[2] * Math.min(W, H), R = lerp(r0, Math.hypot(W, H), eInCubic(k)); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.arc(cx, cy, R, 0, 6.283, true); ctx.clip('evenodd'); ctx.drawImage(tbuf, 0, 0); ctx.restore(); ctx.save(); ctx.strokeStyle = ca(PAL.paper, (1 - k) * .8); ctx.lineWidth = Math.max(1, DPR * 1.5); ctx.beginPath(); ctx.arc(cx, cy, R, 0, 6.283); ctx.stroke(); break; }
+    case 'match': { const an = ANCHOR[L.scene] || [.5, .5, .2], cx = an[0] * W, cy = an[1] * H, r0 = an[2] * Math.min(W, H), R = lerp(r0, Math.hypot(W, H), eInOut(k)); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.moveTo(cx + R, cy); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.clip('evenodd'); ctx.drawImage(tbuf, 0, 0); ctx.restore(); ctx.save(); ctx.strokeStyle = ca(PAL.paper, (1 - k) * .8); ctx.lineWidth = Math.max(1, DPR * 1.5); ctx.beginPath(); ctx.arc(cx, cy, R, 0, 6.283); ctx.stroke(); break; }
     case 'whip': { const dx = -eInCubic(k) * W * 1.2; for (let g = 3; g >= 0; g--) { ctx.globalAlpha = g ? .16 : 1 - k * .3; ctx.drawImage(tbuf, dx + g * W * .04 * Math.sin(k * Math.PI), 0); } break; }
     case 'dial': { const an = ANCHOR[L.scene] || [.5, .5, .3], cx = lerp(W / 2, an[0] * W, q), cy = lerp(H * .5, an[1] * H, q), Rr = lerp(Math.hypot(W, H) * .6, an[2] * Math.min(W, H) * 1.08, q), s = lerp(1, .55, q);
       ctx.beginPath(); ctx.arc(cx, cy, Rr, 0, 6.283); ctx.clip(); ctx.globalAlpha = 1 - clamp((k - .55) / .45); ctx.save(); ctx.translate(cx, cy); ctx.rotate(-eInCubic(k) * 2.4); ctx.scale(s, s); ctx.translate(-W / 2, -H * .5); ctx.drawImage(tbuf, 0, 0); ctx.restore();
