@@ -1,0 +1,1515 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Pay That Toll Road Noir</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=Archivo+Narrow:wght@700&family=IBM+Plex+Mono:wght@400;500;600&family=IM+Fell+English:ital@0;1&display=swap">
+<style>
+:root{
+  color-scheme: dark;
+  --asphalt:#090909; --bone:#E9E3D5; --hazard:#E89724; --signal:#D73022; --exit:#77736C; --night:#090909;
+  --paper:#E9E3D5; --ink:#141413; --ink-soft:#6b675f; --line:rgba(233,227,213,.22);
+  --mono:"IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --display:"Archivo Black", "Arial Black", sans-serif;
+  --cond:"Archivo Narrow", "Arial Narrow", sans-serif;
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{height:100%;margin:0;background:var(--asphalt);color:var(--bone);overflow:hidden}
+body{font:14px/1.45 var(--mono);-webkit-font-smoothing:antialiased;-webkit-tap-highlight-color:transparent}
+#stage{position:fixed;inset:0;width:100%;height:100%;display:block;background:var(--asphalt);cursor:pointer;touch-action:manipulation}
+.vh{position:absolute!important;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;padding:0;margin:-1px}
+button{font:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--hazard);outline-offset:2px}
+
+/* ---------- toll booth (loader) ---------- */
+.booth{
+  position:fixed;left:16px;bottom:calc(16px + env(safe-area-inset-bottom,0px));
+  width:min(420px,calc(100% - 32px));max-height:calc(100% - 32px);overflow:auto;
+  background:var(--paper);color:var(--ink);padding:18px 18px 16px;display:grid;gap:14px;
+  box-shadow:0 0 0 1px rgba(0,0,0,.3),10px 10px 0 var(--hazard);
+  border-top:3px dashed var(--ink);
+}
+.booth .eyebrow{margin:0;display:flex;justify-content:space-between;gap:12px;font-size:11px;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+.booth h1{margin:0;font:400 clamp(40px,10.5vw,56px)/.9 var(--display);text-transform:uppercase;letter-spacing:.005em;text-wrap:balance}
+.booth .sub{margin:0;font-size:11px;letter-spacing:.1em}
+.slots{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.slot{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:12px;align-items:center;padding:9px 12px;border:2px solid var(--ink);cursor:pointer;transition:background .15s}
+.slot:hover{background:rgba(20,20,20,.07)}
+.slot .n{grid-row:span 2;font:400 30px/1 var(--display)}
+.slot .k{font-weight:700;font-size:12px;letter-spacing:.08em}
+.slot .v{font-size:11px;color:var(--ink-soft);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slot.ok{background:var(--ink);color:var(--paper)}
+.slot.ok .v{color:var(--hazard)}
+.slot.err .v{color:var(--signal)}
+.go{appearance:none;border:0;background:var(--signal);color:var(--paper);font:400 28px/1 var(--display);letter-spacing:.04em;padding:14px 16px;display:flex;justify-content:space-between;align-items:center;cursor:pointer;text-transform:uppercase}
+.go:hover{filter:brightness(1.08)}
+.go:disabled{background:#d6cfbd;color:#857f71;cursor:not-allowed;filter:none}
+.booth .note{margin:0;font-size:11px;color:var(--ink-soft)}
+.booth .keys{margin:0;font-size:10px;letter-spacing:.06em;color:var(--ink-soft);border-top:1px solid rgba(20,20,20,.18);padding-top:10px}
+.booth.min{display:none}
+
+/* ---------- transport bar ---------- */
+.bar{
+  position:fixed;left:0;right:0;bottom:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px;
+  padding:26px 16px calc(12px + env(safe-area-inset-bottom,0px));
+  background:linear-gradient(rgba(8,8,10,0),rgba(8,8,10,.88) 45%);color:var(--bone);
+  transition:opacity .25s,transform .25s;
+}
+.bar.hide{opacity:0;transform:translateY(14px);pointer-events:none}
+.bar button{appearance:none;background:rgba(13,13,15,.72);border:1px solid var(--line);padding:6px 10px;min-height:34px;font-size:11px;font-weight:700;letter-spacing:.08em;cursor:pointer}
+.bar button:hover{border-color:var(--bone)}
+.bar button[aria-pressed="true"]{background:var(--hazard);color:var(--ink);border-color:var(--hazard)}
+.bar #b-play{min-width:44px;font-size:14px}
+.bar #b-rec.on{background:var(--signal);border-color:var(--signal);color:var(--paper)}
+.tl{flex:1 1 220px;height:28px;position:relative;cursor:pointer;touch-action:none}
+.tl .secs{position:absolute;left:0;right:0;top:10px;height:8px;background:rgba(242,238,228,.12)}
+.tl .secs i{position:absolute;top:0;bottom:0;display:block}
+.tl .secs i+i{border-left:1px solid var(--asphalt)}
+.tl .fill{position:absolute;left:0;top:19px;height:2px;background:var(--bone);width:0}
+.tl .head{position:absolute;top:4px;bottom:4px;width:3px;margin-left:-1px;background:var(--bone);left:0}
+.bar .time{font-variant-numeric:tabular-nums;font-size:11px;min-width:15ch}
+.bar .grp{display:flex;align-items:center;gap:4px}
+.bar .sync{font-size:10px;font-variant-numeric:tabular-nums;min-width:11ch;text-align:center;letter-spacing:.06em}
+.veil{position:fixed;inset:12px;border:3px dashed var(--hazard);display:grid;place-items:center;background:rgba(13,13,15,.7);pointer-events:none}
+.veil span{font:400 clamp(40px,9vw,120px)/1 var(--display);color:var(--hazard)}
+.tap{position:fixed;top:calc(12px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);width:min(760px,calc(100% - 32px));
+  background:rgba(13,13,15,.92);border:2px solid var(--hazard);padding:12px 14px;display:grid;gap:8px;font-size:12px;color:var(--bone)}
+.tap.hit{border-color:var(--bone)}
+.tap-top{display:flex;justify-content:space-between;gap:12px;align-items:baseline;flex-wrap:wrap}
+.tap-top strong{font:400 22px/1 var(--display);letter-spacing:.04em;color:var(--hazard)}
+.tap-top span{font-variant-numeric:tabular-nums;letter-spacing:.06em}
+.tap-line{margin:0;display:flex;flex-wrap:wrap;gap:6px;font:400 clamp(18px,3.4vw,28px)/1.15 var(--display);text-transform:uppercase}
+.tap-line .w{color:rgba(242,238,228,.38);padding:0 4px}
+.tap-line .w.done{color:var(--bone)}
+.tap-line .w.user{box-shadow:inset 0 -3px 0 var(--hazard)}
+.tap-line .w.next{background:var(--hazard);color:var(--ink)}
+.tap-help{margin:0;font-size:11px;color:rgba(242,238,228,.72);letter-spacing:.04em}
+.tap-actions{display:flex;flex-wrap:wrap;gap:6px}
+.tap-actions button{appearance:none;background:transparent;border:1px solid var(--line);color:var(--bone);padding:6px 10px;min-height:32px;font-size:11px;font-weight:700;letter-spacing:.06em;cursor:pointer}
+.tap-actions button:hover{border-color:var(--bone)}
+.tap-actions #t-export{background:var(--hazard);color:var(--ink);border-color:var(--hazard)}
+.tap textarea{width:100%;height:120px;background:#000;color:var(--bone);border:1px solid var(--line);font:11px/1.4 var(--mono);padding:8px}
+.toast{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));left:50%;transform:translateX(-50%);background:var(--hazard);color:var(--ink);padding:8px 14px;font-size:12px;font-weight:700;letter-spacing:.06em;max-width:calc(100% - 32px)}
+@media (max-width:640px){
+  .tl{order:-1;flex-basis:100%}
+  .booth .keys{display:none}
+  .booth{padding:14px 14px 12px;gap:10px}
+}
+/* road-noir skin: a paper toll ticket on asphalt */
+.booth{background:var(--paper);border-top:6px solid var(--hazard);box-shadow:0 0 0 1px rgba(0,0,0,.45),10px 10px 0 var(--signal)}
+.booth h1{font:400 clamp(40px,10vw,58px)/.9 var(--display);text-transform:uppercase;letter-spacing:-.005em}
+.booth h1 span{display:block;margin-top:8px;font:500 .25em/1 var(--mono);letter-spacing:.24em;color:var(--signal)}
+.booth .eyebrow{font-family:var(--cond);font-size:13px;letter-spacing:.16em}
+.slot{border-color:var(--ink)}
+.slot:hover{background:rgba(232,151,36,.14)}
+.slot .n{font-family:var(--display)}
+.go{font:400 26px/1 var(--display);letter-spacing:.05em}
+.go:disabled{background:#cfc8b8;color:#7d776b}
+.bar button[aria-pressed="true"]{color:#090909}
+.tap{border-color:var(--hazard)}
+.tap-line{font:700 clamp(18px,3.2vw,28px)/1.15 var(--cond);letter-spacing:.02em}
+</style>
+</head>
+<body>
+<canvas id="stage" aria-label="로드 누아르 모션 그래픽 가사 영상"></canvas>
+
+<section class="booth" id="booth" aria-labelledby="booth-title">
+  <p class="eyebrow"><span>Every road has a price</span><span>122 BPM</span></p>
+  <h1 id="booth-title">Pay That Toll<span>road noir</span></h1>
+  <p class="sub">UNOFFICIAL KINETIC LYRIC DEMO · ONEREPUBLIC</p>
+  <ol class="slots">
+    <li>
+      <label class="slot" id="slot-audio" for="f-audio"><span class="n">01</span><span class="k">음원 MP3</span><span class="v" id="v-audio">파일 선택 또는 화면에 드롭</span></label>
+      <input class="vh" type="file" id="f-audio" accept="audio/*,.mp3,.m4a,.wav,.ogg">
+    </li>
+    <li>
+      <label class="slot" id="slot-lyr" for="f-lyr"><span class="n">02</span><span class="k">가사 LRC / TXT</span><span class="v" id="v-lyr">[mm:ss.xx] 타임코드가 붙은 가사 파일</span></label>
+      <input class="vh" type="file" id="f-lyr" accept=".lrc,.txt,text/plain">
+    </li>
+  </ol>
+  <button class="go" id="go" type="button" disabled><span>재생</span><span aria-hidden="true">▶</span></button>
+  <p class="note" id="note">두 파일을 한 번에 드롭해도 돼요. 파일은 이 브라우저 안에서만 읽고 어디에도 올리지 않아요. 뒤에 보이는 화면은 파일 없이 도는 데모 루프예요 (장면 7종).</p>
+  <p class="note" id="word-note">단어 타이밍: 음절 수로 자동 추정 · 재생 후 TAP 버튼(T키)으로 직접 맞출 수 있어요</p>
+  <p class="keys">SPACE 재생 · ← → 5초 이동 · [ ] 싱크 보정 · T 탭 싱크 · F 전체화면 · H HUD</p>
+</section>
+
+<div class="bar hide" id="bar" role="toolbar" aria-label="재생 컨트롤">
+  <button type="button" id="b-play" aria-label="재생">▶</button>
+  <div class="tl" id="tl" role="slider" tabindex="0" aria-label="재생 위치" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+    <div class="secs" id="secs"></div><div class="fill" id="tl-fill"></div><div class="head" id="tl-head"></div>
+  </div>
+  <span class="time" id="time">00:00.00 / 00:00</span>
+  <span class="grp"><button type="button" id="b-sm" aria-label="싱크 10ms 앞당기기">−</button><span class="sync" id="sync">SYNC +0ms</span><button type="button" id="b-sp" aria-label="싱크 10ms 늦추기">+</button></span>
+  <button type="button" id="b-tap" aria-pressed="false">TAP</button>
+  <button type="button" id="b-flash" aria-pressed="true">FLASH</button>
+  <button type="button" id="b-hud" aria-pressed="true">HUD</button>
+  <button type="button" id="b-files">FILES</button>
+  <button type="button" id="b-rec" hidden>● REC</button>
+  <button type="button" id="b-fs">FULL</button>
+</div>
+<div class="veil" id="veil" hidden><span>DROP TO LOAD</span></div>
+<section class="tap" id="tap" hidden aria-label="탭 싱크">
+  <div class="tap-top"><strong>TAP SYNC</strong><span id="tap-pos">LINE 0/0</span><span id="tap-count">0/0 단어 맞춤</span></div>
+  <p class="tap-line" id="tap-line"></p>
+  <p class="tap-help">J · Enter · 화면 탭 = 다음 단어 &nbsp;/&nbsp; ⌫ 되돌리기 &nbsp;/&nbsp; ← 이 줄 다시 &nbsp;/&nbsp; → 다음 줄 &nbsp;/&nbsp; Space 재생·정지 &nbsp;/&nbsp; S 속도</p>
+  <div class="tap-actions">
+    <button type="button" id="t-rate">속도 1×</button>
+    <button type="button" id="t-export">LRC 내보내기</button>
+    <button type="button" id="t-reset">맞춘 값 지우기</button>
+    <button type="button" id="t-close">끝내기</button>
+  </div>
+  <textarea id="t-out" hidden readonly aria-label="내보낸 LRC"></textarea>
+</section>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+(() => {
+'use strict';
+
+/* =====================================================================
+   CONFIG
+   The lyric text is never stored here: it is read from the user's own
+   .lrc/.txt file at runtime. Only the song's beat grid and structure are.
+   ===================================================================== */
+const SONG = {
+  title: 'PAY THAT TOLL',
+  artist: 'ONEREPUBLIC',
+  bpm: 122,          // nominal tempo (shown in the HUD)
+  syncBpm: 121.71,   // measured on the lyric-video audio; plain 122 drifts ~0.3 s by the end
+  beat0: 0.38,       // first downbeat in seconds
+};
+// Song structure in bars (4 beats each, counted from beat0). Measured from the audio.
+const SECTIONS = [
+  { bar: 0,  kind: 'verse',  name: 'VERSE 1' },
+  { bar: 8,  kind: 'pre',    name: 'PRE-CHORUS' },
+  { bar: 16, kind: 'chorus', name: 'CHORUS' },
+  { bar: 24, kind: 'post',   name: 'POST-CHORUS' },
+  { bar: 32, kind: 'verse',  name: 'VERSE 2' },
+  { bar: 40, kind: 'pre',    name: 'PRE-CHORUS' },
+  { bar: 48, kind: 'chorus', name: 'CHORUS' },
+  { bar: 56, kind: 'post',   name: 'POST-CHORUS' },
+  { bar: 64, kind: 'bridge', name: 'BREAKDOWN' },
+  { bar: 72, kind: 'final',  name: 'FINAL CHORUS' },
+  { bar: 82, kind: 'outro',  name: 'OUTRO' },
+];
+// Word onsets tapped by ear for this song: [line start, [word start, ...]] in seconds.
+// Numbers only (no lyric text). Used when a loaded lyric file has no word tags and its lines line up.
+const SONG_WORD_MAP = [[0.51,[0.51,0.9,1.35,1.61]],[1.89,[1.89,2.1,2.35,2.85,3.07,3.3,3.57,3.81,4.29,5.76,6.28]],[8.29,[8.29,8.53,8.76,8.99,9.25,9.71,9.97,10.22]],[10.7,[10.7,10.92,11.17,11.41,11.67,12.17,13.68]],[14.89,[14.89,15.13,15.24,15.37,15.87,17.07,17.34,17.84]],[18.84,[18.84,19.07,19.33,19.51,19.77,20.58,20.77,21.01,21.7]],[22.75,[22.75,22.98,23.09,23.23,23.7,24.93,25.46,25.7]],[26.69,[26.69,26.91,27.03,27.16,27.67,28.18,28.41,28.91,29.41]],[31.86,[31.86,32.84,33.32,33.81,34.81,35.02,35.27,35.77]],[36.48,[36.48,36.8,37.26,37.51,37.73,38.25,38.72]],[39.71,[39.71,40.47,40.7,40.92,41.16,41.7,42.66,42.89,43.39,43.63]],[44.14,[44.14,44.85,45.09,45.6,46.09,46.57]],[48.59,[48.59,50.54]],[52.04,[52.04,52.71,52.99,53.46,53.98,54.47]],[56.44,[56.44,58.38]],[59.88,[59.88,60.59,60.85,61.33,61.83,62.35]],[63.31,[63.31,63.83,64.3,64.53,64.79,65.03,65.3]],[65.53,[65.53,66.0,66.24,66.49,66.75,67.22,68.72,69.19]],[71.19,[71.19,71.45,71.68,72.16,72.42,72.66]],[73.13,[73.13,73.37,73.64,74.37,74.59,75.11,76.52]],[77.7,[77.7,77.86,78.06,78.17,78.3,78.78,79.58,79.79,80.01,80.26,80.76]],[81.92,[81.92,82.06,82.24,82.45,82.73,83.46,83.69,83.95,84.71]],[85.7,[85.7,85.91,86.03,86.19,86.66,87.88,88.35,88.59]],[89.61,[89.61,89.86,89.99,90.11,90.57,91.07,91.42,91.83,92.33]],[94.81,[94.81,95.75,96.25,96.78,97.75,97.95,98.22,98.73]],[99.23,[99.23,99.71,100.19,100.44,100.69,101.22,101.65]],[102.64,[102.64,103.33,103.61,103.86,104.11,104.61,105.6,105.83,106.31,106.56]],[107.07,[107.07,107.8,108.03,108.55,109.02,109.53]],[110.55,[110.55,111.73,111.97,112.49,113.67,113.93,114.45,115.93,116.42]],[118.39,[118.39,119.59,119.84,120.33,121.59,121.85,122.31,123.75,124.27]],[126.25,[126.25,127.23,127.75,128.23,129.19,129.46,129.68,130.21]],[130.69,[130.69,131.15,131.65,131.88,132.14,132.63,133.15]],[134.13,[134.13,134.99,135.19,135.65,136.09,136.82,137.16,138.07]],[138.56,[138.56,139.28,139.52,140.05,140.53,140.99]],[141.99,[141.99,142.97,143.45,143.97,144.91,145.14,145.41,145.93]],[146.38,[146.38,146.91,147.39,147.63,147.87,148.4,148.87]],[149.86,[149.86,150.57,150.8,151.06,151.31,151.82,152.8,153.04,153.56,153.8]],[154.27,[154.27,154.98,155.24,155.77,156.25,156.72]]];
+const ENERGY = { verse: .35, pre: .6, chorus: .85, post: .95, bridge: .5, final: 1, outro: .3 };
+const SONG_CLK = { beat0: SONG.beat0, spb: 60 / SONG.syncBpm };
+const DEMO_CLK = { beat0: 0, spb: 60 / SONG.bpm };
+const SEC_T = SECTIONS.map(s => ({ ...s, t: SONG_CLK.beat0 + s.bar * 4 * SONG_CLK.spb }));
+
+// Attract loop shown before any file is loaded (original text, one line per layout).
+const DEMO = [
+  ['EVERY ROAD HAS A PRICE', '@road', 'verse'],
+  ['DROP YOUR TRACK HERE', '@casino', 'pre'],
+  ['WATCH THE NEEDLE CLIMB', '@gauge', 'pre'],
+  ['FOLLOW THE OLD MAP', '@map', 'verse'],
+  ['READ THE SIGNS', '@signs', 'chorus'],
+  ['PRINT THE RECEIPT', '@receipt', 'post'],
+  ['LOAD THE LYRICS', '@toll', 'final'],
+];
+
+const C = {
+  asphalt: '#0d0d0f', bone: '#f2eee4', hazard: '#ffd100', signal: '#ff2a1f', exit: '#0b6b3a',
+  night: '#0b1233', ember: '#ff6a13', paper: '#f6f1e3', ink: '#141414', gold: '#f0b92b',
+};
+const PALS = {
+  verse:  [{ bg: C.asphalt, fg: C.bone, acc: C.hazard, acc2: C.signal }],
+  pre:    [{ bg: '#17070a', fg: C.bone, acc: C.signal, acc2: C.hazard }],
+  chorus: [{ bg: C.hazard, fg: C.asphalt, acc: C.signal, acc2: C.bone }, { bg: C.asphalt, fg: C.hazard, acc: C.signal, acc2: C.bone }],
+  post:   [{ bg: C.signal, fg: C.asphalt, acc: C.bone, acc2: C.hazard }, { bg: C.asphalt, fg: C.signal, acc: C.hazard, acc2: C.bone }],
+  bridge: [{ bg: C.night, fg: '#e8edff', acc: C.signal, acc2: C.hazard }],
+  final:  [{ bg: C.hazard, fg: C.asphalt, acc: C.signal, acc2: C.bone }, { bg: C.asphalt, fg: C.hazard, acc: C.signal, acc2: C.bone },
+           { bg: C.signal, fg: C.asphalt, acc: C.bone, acc2: C.hazard }, { bg: C.bone, fg: C.asphalt, acc: C.signal, acc2: C.hazard }],
+  outro:  [{ bg: C.asphalt, fg: C.bone, acc: C.hazard, acc2: C.signal }],
+};
+
+/* ============================ math ============================ */
+const clamp = (x, a = 0, b = 1) => x < a ? a : x > b ? b : x;
+const lerp = (a, b, k) => a + (b - a) * k;
+const eOutCubic = k => 1 - Math.pow(1 - k, 3);
+const eInCubic = k => k * k * k;
+const eOutExpo = k => k >= 1 ? 1 : 1 - Math.pow(2, -10 * k);
+const eInOut = k => k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2;
+const eOutBack = (k, s = 1.70158) => 1 + (s + 1) * Math.pow(k - 1, 3) + s * Math.pow(k - 1, 2);
+const eOutElastic = k => k <= 0 ? 0 : k >= 1 ? 1 : Math.pow(2, -10 * k) * Math.sin((k * 10 - .75) * 2.0944) + 1;
+const eOutBounce = k => { const n = 7.5625, d = 2.75;
+  if (k < 1 / d) return n * k * k; if (k < 2 / d) return n * (k -= 1.5 / d) * k + .75;
+  if (k < 2.5 / d) return n * (k -= 2.25 / d) * k + .9375; return n * (k -= 2.625 / d) * k + .984375; };
+function hash(n) { n = (n | 0) ^ 0x9e3779b9; n = Math.imul(n ^ (n >>> 16), 0x85ebca6b); n = Math.imul(n ^ (n >>> 13), 0xc2b2ae35); n ^= n >>> 16; return (n >>> 0) / 4294967296; }
+function hstr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
+const RGB = new Map();
+function rgb(hex) { let v = RGB.get(hex); if (!v) { const n = parseInt(hex.slice(1), 16); v = [n >> 16 & 255, n >> 8 & 255, n & 255]; RGB.set(hex, v); } return v; }
+function mixc(a, b, k) { const x = rgb(a), y = rgb(b); return `rgb(${Math.round(lerp(x[0], y[0], k))},${Math.round(lerp(x[1], y[1], k))},${Math.round(lerp(x[2], y[2], k))})`; }
+function lum(hex) { const [r, g, b] = rgb(hex); return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255; }
+function fmt(t) { t = Math.max(0, t); const m = Math.floor(t / 60), s = t - m * 60; return `${String(m).padStart(2, '0')}:${s.toFixed(2).padStart(5, '0')}`; }
+function upper(arr, t, key) { let lo = 0, hi = arr.length; while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m][key] <= t) lo = m + 1; else hi = m; } return lo; }
+
+/* ============================ canvas & type ============================ */
+const cv = document.getElementById('stage');
+let ctx = cv.getContext('2d', { alpha: false });
+let W = 0, H = 0, DPR = 1;
+const F = {
+  disp:   { fam: '"Archivo Black", "Arial Black", sans-serif', w: '400', st: 'normal' },
+  cond:   { fam: '"Archivo Narrow", "Arial Narrow", sans-serif', w: '700', st: 'normal' },
+  mono:   { fam: '"IBM Plex Mono", ui-monospace, Menlo, monospace', w: '500', st: 'normal' },
+  monoR:  { fam: '"IBM Plex Mono", ui-monospace, Menlo, monospace', w: '400', st: 'normal' },
+  monoB:  { fam: '"IBM Plex Mono", ui-monospace, Menlo, monospace', w: '600', st: 'normal' },
+  serif:  { fam: '"IM Fell English", Georgia, serif', w: '400', st: 'normal' },
+  serifI: { fam: '"IM Fell English", Georgia, serif', w: '400', st: 'italic' },
+};
+F.display = F.disp;
+const CAP = new Map(Object.values(F).map(f => [f, .72]));
+const MC = new Map();   // width cache (per 1px)
+const RC = new Map();   // word raster cache (road)
+const STAMPS = new Map();
+function setF(f, px) { ctx.font = `${f.st} ${f.w} ${Math.max(1, px).toFixed(1)}px ${f.fam}`; }
+function mw(s, f) {
+  const k = f.fam + f.w + f.st + '|' + s; let v = MC.get(k);
+  if (v === undefined) { setF(f, 100); v = ctx.measureText(s).width / 100; if (MC.size > 5000) MC.clear(); MC.set(k, v); }
+  return v;
+}
+const capOf = f => CAP.get(f);
+function measureCaps() {
+  for (const f of Object.values(F)) { setF(f, 100); const m = ctx.measureText('H'); if (m.actualBoundingBoxAscent > 0) CAP.set(f, m.actualBoundingBoxAscent / 100); }
+}
+// Draw a word vertically centred on its cap height. Returns its width.
+function word(s, x, cy, px, f, o = {}) {
+  setF(f, px); ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  const base = cy + capOf(f) * px / 2; const tr = (o.track || 0) * px;
+  const w = mw(s, f) * px + tr * Math.max(0, s.length - 1);
+  const x0 = o.align === 'left' ? x : o.align === 'right' ? x - w : x - w / 2;
+  if (o.stroke) { ctx.strokeStyle = o.stroke; ctx.lineWidth = o.lw || px * .03; ctx.lineJoin = 'round'; }
+  if (o.fill) ctx.fillStyle = o.fill;
+  if (!tr) {
+    if (o.stroke && o.under) ctx.strokeText(s, x0, base);
+    if (o.fill) ctx.fillText(s, x0, base);
+    if (o.stroke && !o.under) ctx.strokeText(s, x0, base);
+  } else {
+    let xx = x0;
+    for (const ch of s) { if (o.fill) ctx.fillText(ch, xx, base); if (o.stroke) ctx.strokeText(ch, xx, base); xx += mw(ch, f) * px + tr; }
+  }
+  return w;
+}
+function fit(s, f, maxW, maxH, track = 0) { return Math.min(maxW / (mw(s, f) + track * Math.max(0, s.length - 1)), maxH / capOf(f)); }
+function rr(x, y, w, h, r) { ctx.beginPath(); ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r); ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath(); }
+function raster(text, f, color) {
+  const key = text + '|' + color + '|' + f.fam + f.st; let r = RC.get(key); if (r) return r;
+  const px = 180, c = document.createElement('canvas');
+  const w = Math.ceil(mw(text, f) * px + px * .2), h = Math.ceil(capOf(f) * px + px * .16);
+  c.width = w; c.height = h; const x = c.getContext('2d');
+  x.font = `${f.st} ${f.w} ${px}px ${f.fam}`; x.fillStyle = color; x.textBaseline = 'alphabetic'; x.fillText(text, px * .1, h - px * .08);
+  r = { c, w, h }; if (RC.size > 160) RC.clear(); RC.set(key, r); return r;
+}
+function stampRaster(text, color) {
+  const key = text + color; let r = STAMPS.get(key); if (r) return r;
+  const f = F.display, px = 220, c = document.createElement('canvas');
+  const tw = mw(text, f) * px, th = capOf(f) * px, pad = px * .28;
+  c.width = Math.ceil(tw + pad * 2); c.height = Math.ceil(th + pad * 2); const x = c.getContext('2d');
+  x.strokeStyle = color; x.fillStyle = color; x.lineWidth = px * .07; x.strokeRect(px * .06, px * .06, c.width - px * .12, c.height - px * .12);
+  x.lineWidth = px * .025; x.strokeRect(px * .15, px * .15, c.width - px * .3, c.height - px * .3);
+  x.font = `${f.st} ${f.w} ${px}px ${f.fam}`; x.textBaseline = 'alphabetic'; x.fillText(text, pad, pad + th);
+  x.globalCompositeOperation = 'destination-out';
+  for (let i = 0; i < 900; i++) { const rx = hash(i * 3 + 1) * c.width, ry = hash(i * 7 + 2) * c.height, rs = (hash(i * 11 + 3) ** 3) * px * .07 + 1; x.globalAlpha = .4 + hash(i) * .6; x.beginPath(); x.arc(rx, ry, rs, 0, 6.283); x.fill(); }
+  r = { c, w: c.width, h: c.height }; STAMPS.set(key, r); return r;
+}
+// cheap bloom + grain buffers
+const bloomA = document.createElement('canvas'), bloomB = document.createElement('canvas');
+const bA = bloomA.getContext('2d'), bB = bloomB.getContext('2d');
+const grain = document.createElement('canvas'); grain.width = grain.height = 192;
+{ const g = grain.getContext('2d'), id = g.createImageData(192, 192);
+  for (let i = 0; i < id.data.length; i += 4) { const v = hash(i) > .5 ? 255 : 0; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = hash(i + 7) * 26; }
+  g.putImageData(id, 0, 0); }
+let grainPat = null, vignette = null;
+function resize() {
+  const cw = innerWidth, ch = innerHeight; let d = Math.min(devicePixelRatio || 1, 2);
+  const maxPx = 2.6e6; if (cw * ch * d * d > maxPx) d = Math.sqrt(maxPx / (cw * ch));
+  DPR = d; W = Math.max(2, Math.round(cw * d)); H = Math.max(2, Math.round(ch * d));
+  cv.width = W; cv.height = H;
+  bloomA.width = Math.max(2, W >> 2); bloomA.height = Math.max(2, H >> 2);
+  bloomB.width = Math.max(2, W >> 4); bloomB.height = Math.max(2, H >> 4);
+  grainPat = ctx.createPattern(grain, 'repeat');
+  vignette = ctx.createRadialGradient(W / 2, H / 2, Math.min(W, H) * .35, W / 2, H / 2, Math.hypot(W, H) * .62);
+  vignette.addColorStop(0, 'rgba(0,0,0,0)'); vignette.addColorStop(1, 'rgba(0,0,0,.42)');
+}
+
+/* ============================ state ============================ */
+const RM = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const S = {
+  mode: 'demo', lines: [], events: [], tolls: [], firstT: 0, lastEnd: 0,
+  demoLines: [], demoEvents: [], demoLen: 0, demoStart: performance.now() / 1000,
+  flash: !RM, hud: true, offset: 0, freeze: null,
+  audioName: '', lyricsName: '', lyricsCount: 0, decoding: 0,
+  rate: 1, entries: [], meta: [], lyricsHash: '', wordSource: 'auto',
+};
+try { const o = JSON.parse(localStorage.getItem('ptt-prefs') || '{}'); if (typeof o.offset === 'number') S.offset = o.offset; if (typeof o.flash === 'boolean') S.flash = o.flash; if (typeof o.hud === 'boolean') S.hud = o.hud; } catch (_) {}
+const TP = { on: false, flat: [], cur: 0, undo: [], lastLine: -1 }; // tap-sync session
+function savePrefs() { try { localStorage.setItem('ptt-prefs', JSON.stringify({ offset: S.offset, flash: S.flash, hud: S.hud })); } catch (_) {} }
+function sectionAt(t) { let s = SEC_T[0]; for (const x of SEC_T) if (t >= x.t) s = x; return s; }
+
+/* ============================ lyrics ============================ */
+function parseLRC(text, metaOut) {
+  const out = []; let offset = 0;
+  for (const raw of text.replace(/\r/g, '').split('\n')) {
+    const tags = [...raw.matchAll(/\[(\d{1,3}):(\d{1,2}(?:[.:]\d{1,3})?)\]/g)];
+    const meta = raw.match(/^\s*\[(ti|ar|al|by|offset|length|re|ve):([^\]]*)\]\s*$/i);
+    if (meta && !tags.length) { if (meta[1].toLowerCase() === 'offset') offset = (parseFloat(meta[2]) || 0) / 1000; else if (metaOut) metaOut.push(raw.trim()); continue; }
+    if (!tags.length) continue;
+    const body = raw.replace(/\[\d{1,3}:\d{1,2}(?:[.:]\d{1,3})?\]/g, '').trim();
+    for (const m of tags) out.push({ t: parseInt(m[1], 10) * 60 + parseFloat(m[2].replace(':', '.')) - offset, text: body });
+  }
+  out.sort((a, b) => a.t - b.t);
+  return out;
+}
+const OH = /^(oh|ooh|ah|yeah|mhm|mm|whoa|la|oh-oh|ooh-ooh|oh-oh-oh|na)$/i;
+const clean = tok => tok.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, '');
+const WFX = [
+  [/^bells?$/, 'bell'], [/^coins?$/, 'coins'], [/^(money|free|cash|pay)$/, 'coins'], [/^well$/, 'ripple'],
+  [/^(fast|hell|speed)$/, 'speed'], [/^wreck/, 'wreck'], [/^slow/, 'slow'], [/^(burning|burn|fire)$/, 'fire'],
+  [/^black$/, 'black'], [/^toll$/, 'toll'], [/^signs?$/, 'signflash'], [/^(line|cross|crossing)$/, 'line'],
+];
+function wordFx(lc) { for (const [re, fx] of WFX) if (re.test(lc)) return fx; return null; }
+function makeLine(raw, t0, tEnd, clk, layout, kind) {
+  const adl = [];
+  const main = raw.replace(/\(([^)]*)\)/g, (_, a) => { if (a.trim()) adl.push(a.trim()); return ' '; });
+  const words = []; let inQ = false, curT = null;
+  for (const part of main.split(/(<\d{1,3}:\d{1,2}(?:\.\d{1,3})?>)/)) {
+    const m = part.match(/^<(\d{1,3}):(\d{1,2}(?:\.\d{1,3})?)>$/);
+    if (m) { curT = parseInt(m[1], 10) * 60 + parseFloat(m[2]); continue; }
+    for (const tok of part.split(/\s+/)) {
+      if (!tok) continue;
+      const qn = (tok.match(/["“”]/g) || []).length, startQ = /^[^\p{L}\p{N}]*["“]/u.test(tok);
+      if (startQ) inQ = true; const isQ = inQ; if (qn && (!startQ || qn >= 2)) inQ = false;
+      const c = clean(tok); if (!c) continue;
+      words.push({ text: c.toUpperCase(), low: c, lc: c.toLowerCase(), q: isQ, t: curT, fx: null, pause: /[,;:.!?…]["”']?$/.test(tok) });
+      curT = null;
+    }
+  }
+  return { t0, tEnd, body: raw, words, adlib: adl.join(' · '), lc: main.toLowerCase(), quote: /["“”]/.test(main), layout, kind, spb: clk.spb };
+}
+function syllables(word) {
+  let n = 0;
+  for (let p of word.toLowerCase().split('-')) {
+    p = p.replace(/[^a-z]/g, ''); if (!p) continue;
+    if (p.length <= 3) { n++; continue; }
+    p = p.replace(/(?:[^laeiouy]es|[^laeiouy]ed|[^laeiouy]e)$/, '').replace(/^y/, '');
+    const m = p.match(/[aeiouy]{1,2}/g); n += Math.max(1, m ? m.length : 1);
+  }
+  return Math.max(1, n);
+}
+function timeWords(L, clk) {
+  const ws = L.words; if (!ws.length) return;
+  if (ws.some(w => w.t != null)) { // enhanced LRC <mm:ss.xx> word tags: fill the gaps
+    if (ws[0].t == null) ws[0].t = L.t0;
+    for (let i = 1; i < ws.length; i++) if (ws[i].t == null) {
+      let j = i; while (j < ws.length && ws[j].t == null) j++;
+      const ta = ws[i - 1].t, tb = j < ws.length ? ws[j].t : L.tEnd - .1;
+      for (let k = i; k < j; k++) ws[k].t = ta + (tb - ta) * (k - i + 1) / (j - i + 1);
+      i = j - 1;
+    }
+    return;
+  }
+  // No word tags: spread words by syllable count; a comma adds a breath before the next word.
+  const span = L.tEnd - L.t0;
+  const syl = ws.map(w => syllables(w.lc)), sylTot = syl.reduce((a, b) => a + b, 0);
+  const pauses = ws.slice(0, -1).filter(w => w.pause).length;
+  const sing = Math.min(span * .9, Math.max(.9, sylTot * .22 + pauses * .25 + .3));
+  const wt = ws.map((w, i) => syl[i] + (w.pause && i < ws.length - 1 ? 1.1 : 0)), tot = wt.reduce((a, b) => a + b, 0);
+  const q = clk.spb / 4; let acc = 0, prev = -Infinity;
+  ws.forEach((w, i) => {
+    let tt = L.t0 + sing * acc / tot; acc += wt[i];
+    if (i > 0) { const tq = clk.beat0 + Math.round((tt - clk.beat0) / q) * q; tt = Math.max(tq, prev + q * .9); } else tt = L.t0;
+    w.t = Math.min(tt, L.tEnd - .06); prev = w.t;
+  });
+}
+const POOL = { verse: ['stack', 'slam', 'marquee'], pre: ['stack', 'roulette', 'gauge'], chorus: ['stack', 'marquee'],
+  post: ['burst', 'marquee'], bridge: ['slam', 'split'], final: ['stack', 'marquee', 'burst'], outro: ['slam'] };
+// Keyword-driven layout candidates for a line (null = no strong match, use the section pool).
+function ruleLayouts(L) {
+  const s = L.lc;
+  if (L.words.length && L.words.every(w => OH.test(w.lc))) return ['burst'];
+  if (/\bblack\b|\bred\b|\broulette/.test(s)) return ['roulette'];
+  if (/\btime\b|\bclock\b|\btick/.test(s)) return ['clock'];
+  if (/\bwreck|\bfast\b|\bhell\b|\bspeed/.test(s)) return ['gauge'];
+  if (/\broad\b|\bburn|\bhighway|\bdrive/.test(s)) return ['road'];
+  if (/\bline\b|\bcross/.test(s)) return ['tape'];
+  if (/\bsigns?\b|\bexit\b/.test(s)) return ['sign'];
+  if (/\bslow\b/.test(s) || L.quote) return ['split'];
+  if (/\bmoney\b|\bfree\b|\bprice|\bcost|\bcash/.test(s)) return ['ticket'];
+  if (/\btoll\b|\bpay\b/.test(s)) return (L.kind === 'post' || L.kind === 'bridge') ? ['marquee', 'stack'] : ['stack', 'marquee'];
+  return null;
+}
+function finalize(lines, clk, kindOf) {
+  lines.forEach((L, i) => { const nx = lines[i + 1]; if (nx && nx.t0 < L.tEnd) L.tEnd = Math.max(L.t0 + .2, nx.t0); L.rawEnd = L.tEnd; });
+  lines.forEach(L => { timeWords(L, clk); L.words.forEach(w => { w.auto = w.t; }); });
+  relayout(lines);
+  lines.forEach((L, i) => { L.idx = i; if (!L.kind) L.kind = kindOf(L.t0); L.words.forEach(w => { w.fx = wordFx(w.lc); }); });
+  const rules = lines.map(ruleLayouts);
+  lines.forEach((L, i) => {
+    if (L.layout) return;
+    const prev = i ? lines[i - 1].layout : null, next = rules[i + 1] ? rules[i + 1][0] : null;
+    const pool = POOL[L.kind] || POOL.verse;
+    const cands = rules[i] || pool.map((_, j) => pool[(i + j) % pool.length]);
+    L.layout = cands.find(c => c !== prev && c !== next) || cands.find(c => c !== prev) || cands[0];
+  });
+}
+// Line start = its first word; hold a line through short gaps so the screen never blinks.
+function relayout(lines) {
+  lines.forEach(L => { if (L.words.length) L.t0 = L.words[0].t; });
+  lines.forEach((L, i) => {
+    const nx = lines[i + 1], last = L.words.length ? L.words[L.words.length - 1].t : L.t0;
+    let end = Math.max(L.rawEnd, last + .3);
+    if (nx) { if (nx.t0 - end < .7) end = nx.t0; end = Math.min(end, nx.t0); }
+    L.tEnd = Math.max(end, L.t0 + .2);
+  });
+}
+// Apply tapped times (w.user). Untapped words after a tapped one keep their rhythm, shifted by the same amount.
+function retime() {
+  for (const L of S.lines) {
+    let shift = 0;
+    L.words.forEach((w, k) => {
+      let t;
+      if (w.user != null) { t = w.user; shift = w.user - w.auto; } else t = w.auto + shift;
+      if (k) t = Math.max(t, L.words[k - 1].t + (w.user != null ? .01 : .06));
+      w.t = t;
+    });
+  }
+  relayout(S.lines);
+  S.events = buildEvents(S.lines); S.tolls = S.events.filter(e => e.fx === 'toll');
+  S.firstT = S.lines.length ? S.lines[0].t0 : 0;
+  S.lastEnd = S.lines.length ? S.lines[S.lines.length - 1].tEnd : 0;
+}
+function buildSong(entries) {
+  const lines = [];
+  for (let i = 0; i < entries.length; i++) {
+    const en = entries[i]; if (!en.text.trim()) continue;
+    const nx = entries[i + 1];
+    lines.push(makeLine(en.text, en.t, Math.max(en.t + .4, nx ? nx.t : en.t + 5), SONG_CLK, null, null));
+  }
+  const kept = lines.filter(L => L.words.length);
+  applyWordMap(kept);
+  finalize(kept, SONG_CLK, t => sectionAt(t + 2.05).kind);
+  return kept;
+}
+function applyWordMap(lines) {
+  let j = 0;
+  for (const L of lines) {
+    if (L.words.some(w => w.t != null)) continue; // the file's own word tags win
+    while (j < SONG_WORD_MAP.length && SONG_WORD_MAP[j][0] < L.t0 - 1) j++;
+    const m = SONG_WORD_MAP[j];
+    if (m && Math.abs(m[0] - L.t0) <= 1 && m[1].length === L.words.length) { L.words.forEach((w, k) => { w.t = m[1][k]; }); L.mapped = true; j++; }
+  }
+}
+function buildDemo() {
+  const bl = 8 * DEMO_CLK.spb; const lines = [];
+  DEMO.forEach(([text, layout, kind], i) => {
+    const L = makeLine(text, i * bl + .02, (i + 1) * bl, DEMO_CLK, layout, kind);
+    L.words.forEach((w, j) => { w.t = L.t0 + j * DEMO_CLK.spb; });
+    lines.push(L);
+  });
+  lines.forEach((L, i) => { L.idx = i; L.words.forEach(w => { w.fx = wordFx(w.lc); }); });
+  S.demoLines = lines; S.demoEvents = buildEvents(lines); S.demoLen = DEMO.length * bl;
+}
+function useLyrics(entries, name, text, meta) {
+  S.lines = buildSong(entries); S.entries = entries; S.meta = meta || [];
+  S.lyricsHash = hstr(text).toString(36) + '-' + text.length;
+  S.wordSource = S.lines.some(L => /<\d{1,3}:\d/.test(L.body)) ? 'tags' : S.lines.some(L => L.mapped) ? 'map' : 'auto';
+  loadTaps(); retime();
+  S.lyricsName = name; S.lyricsCount = S.lines.length;
+  if (TP.on) { buildFlat(); TP.cur = cursorFromTime(heardTime()); TP.undo = []; renderTapPanel(); }
+}
+// Tapped word times live in this browser only, keyed by the lyric file's hash (numbers only).
+const tapKey = () => 'ptt-taps:' + S.lyricsHash;
+function tapCount() { let n = 0; for (const L of S.lines) for (const w of L.words) if (w.user != null) n++; return n; }
+function saveTaps() {
+  try { localStorage.setItem(tapKey(), JSON.stringify({ v: 1, n: S.lines.length, t: S.lines.map(L => L.words.map(w => w.user == null ? null : +w.user.toFixed(3))) })); } catch (_) {}
+}
+function loadTaps() {
+  try {
+    const o = JSON.parse(localStorage.getItem(tapKey()) || 'null'); if (!o || o.n !== S.lines.length) return;
+    o.t.forEach((arr, i) => { const L = S.lines[i]; if (!L || !arr || arr.length !== L.words.length) return; arr.forEach((v, j) => { if (typeof v === 'number') L.words[j].user = v; }); });
+  } catch (_) {}
+}
+function clearTaps() { for (const L of S.lines) for (const w of L.words) delete w.user; try { localStorage.removeItem(tapKey()); } catch (_) {} retime(); }
+// Rebuild the user's own lyric file with <mm:ss.xx> word tags (enhanced LRC).
+function tagBody(L) {
+  const body = L.body.replace(/<\d{1,3}:\d{1,2}(?:\.\d{1,3})?>/g, '');
+  let depth = 0, wi = 0, out = '';
+  for (const tk of body.split(/(\s+)/)) {
+    if (!tk || /^\s+$/.test(tk)) { out += tk; continue; }
+    const inParen = depth > 0 || tk.startsWith('(');
+    depth = Math.max(0, depth + (tk.match(/\(/g) || []).length - (tk.match(/\)/g) || []).length);
+    if (!inParen && clean(tk.replace(/\(.*$/, '')) && wi < L.words.length) { out += `<${fmt(L.words[wi].t)}>${tk}`; wi++; } else out += tk;
+  }
+  if (wi === L.words.length) return out;
+  return L.words.map(w => `<${fmt(w.t)}>${w.low}`).join(' ') + (L.adlib ? ` (${L.adlib})` : '');
+}
+function exportLRC() {
+  const out = [...S.meta]; let li = 0;
+  for (const en of S.entries) {
+    const L = S.lines[li];
+    if (en.text.trim() && L && L.body === en.text) { out.push(`[${fmt(L.t0)}]${tagBody(L)}`); li++; }
+    else out.push(`[${fmt(en.t)}]${en.text}`);
+  }
+  return out.join('\n') + '\n';
+}
+
+/* ============================ audio ============================ */
+const A = { ctx: null, buf: null, src: null, an: null, gain: null, rec: null, freq: null, playing: false, t0: 0, pos: 0, pos0: 0, rate: 1 };
+const AU = { bass: 0, level: 0 };
+function ensureCtx() {
+  if (!A.ctx) {
+    const AC = window.AudioContext || window.webkitAudioContext; A.ctx = new AC();
+    A.an = A.ctx.createAnalyser(); A.an.fftSize = 1024; A.an.smoothingTimeConstant = .55;
+    A.gain = A.ctx.createGain(); A.an.connect(A.gain); A.gain.connect(A.ctx.destination);
+    A.freq = new Uint8Array(A.an.frequencyBinCount);
+  }
+  return A.ctx;
+}
+function duration() { return A.buf ? A.buf.duration : Math.max(10, S.lastEnd + 8); }
+function rawTime() {
+  if (!A.playing) return A.pos;
+  return A.pos0 + ((A.buf ? A.ctx.currentTime : performance.now() / 1000) - A.t0) * A.rate;
+}
+function latency() { return A.playing && A.buf && A.ctx ? ((A.ctx.outputLatency || 0) + (A.ctx.baseLatency || 0)) * A.rate : 0; }
+function heardTime() { return rawTime() - latency(); } // song position the listener hears right now
+function play() {
+  if (A.playing) return;
+  if (A.pos >= duration() - .05) A.pos = 0;
+  if (A.buf) {
+    ensureCtx(); A.ctx.resume();
+    const s = A.ctx.createBufferSource(); s.buffer = A.buf; s.playbackRate.value = S.rate; s.connect(A.an);
+    s.onended = () => { if (A.src === s && A.playing) { A.playing = false; A.pos = duration(); A.src = null; onEnded(); } };
+    s.start(0, A.pos); A.src = s; A.t0 = A.ctx.currentTime;
+  } else A.t0 = performance.now() / 1000;
+  A.pos0 = A.pos; A.rate = S.rate;
+  A.playing = true; syncUI();
+}
+function pause() {
+  if (!A.playing) return;
+  A.pos = clamp(rawTime(), 0, duration()); A.playing = false;
+  if (A.src) { const s = A.src; A.src = null; try { s.stop(); } catch (_) {} }
+  syncUI();
+}
+function seek(t) { const was = A.playing; if (was) pause(); A.pos = clamp(t, 0, duration()); if (was) play(); syncUI(); }
+function setRate(r) { const was = A.playing; if (was) pause(); S.rate = r; if (was) play(); syncUI(); }
+function songTime() {
+  let t = rawTime();
+  if (A.playing && !A.buf && t >= duration()) { A.playing = false; A.pos = duration(); onEnded(); t = A.pos; }
+  return t - latency() + S.offset / 1000;
+}
+function sampleAudio() {
+  if (!(A.playing && A.buf && A.an)) { AU.bass *= .9; AU.level *= .9; return; }
+  A.an.getByteFrequencyData(A.freq);
+  let b = 0; for (let i = 1; i < 8; i++) b += A.freq[i]; b /= 7 * 255;
+  let l = 0; for (let i = 8; i < 160; i++) l += A.freq[i]; l /= 152 * 255;
+  AU.bass = Math.max(b * b * 1.4, AU.bass * .86); AU.level = Math.max(l, AU.level * .9);
+}
+
+/* ============================ v4: helpers ============================ */
+function eachActive(list, t, win, fn) { for (let i = upper(list, t, 't') - 1; i >= 0; i--) { const ev = list[i]; if (t - ev.t > win) break; fn(ev, t - ev.t); } }
+function wstate(L, t) { let ci = -1; for (let i = 0; i < L.words.length; i++) { if (L.words[i].t <= t) ci = i; else break; } return ci; }
+function lineAt(lines, t) { const i = upper(lines, t, 't0') - 1; return i >= 0 ? lines[i] : null; }
+const smooth = k => { k = clamp(k); return k * k * (3 - 2 * k); };
+function circle(x, y, r) { ctx.beginPath(); ctx.arc(x, y, Math.max(0, r), 0, 6.283); ctx.fill(); }
+const PAL = { asphalt: '#090909', paper: '#E9E3D5', red: '#D73022', amber: '#E89724', steel: '#77736C', ink: '#141413', steelD: '#2e2d2a', steelL: '#a8a49b', road: '#121211' };
+function ca(hex, a) { const [r, g, b] = rgb(hex); return `rgba(${r},${g},${b},${a})`; }
+// small textures (paper, asphalt, halftone), patterns cached per context so the transition buffer can use them too
+const TEXC = {}, PATC = new WeakMap();
+function makeTex(name, w, h, draw) { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); TEXC[name] = c; }
+makeTex('paper', 256, 256, (x, w, h) => { x.fillStyle = PAL.paper; x.fillRect(0, 0, w, h); const id = x.getImageData(0, 0, w, h); for (let i = 0; i < id.data.length; i += 4) { const n = (hash(i * 7 + 3) - .5) * 20; id.data[i] += n; id.data[i + 1] += n; id.data[i + 2] += n * .8; } x.putImageData(id, 0, 0);
+  x.strokeStyle = 'rgba(110,90,60,.07)'; for (let k = 0; k < 50; k++) { const y = hash(k) * h; x.beginPath(); x.moveTo(0, y); x.bezierCurveTo(w * .3, y + hash(k + 1) * 8, w * .6, y - hash(k + 2) * 8, w, y + hash(k + 3) * 5); x.stroke(); } });
+makeTex('asphalt', 160, 160, (x, w, h) => { const id = x.createImageData(w, h); for (let i = 0; i < id.data.length; i += 4) { const v = hash(i + 11) > .5 ? 255 : 0; id.data[i] = id.data[i + 1] = id.data[i + 2] = v; id.data[i + 3] = hash(i * 3) * 22; } x.putImageData(id, 0, 0); });
+makeTex('halftone', 10, 10, (x) => { x.fillStyle = 'rgba(233,227,213,.09)'; x.beginPath(); x.arc(5, 5, 1.6, 0, 6.283); x.fill(); });
+function pat(name) { let m = PATC.get(ctx); if (!m) { m = {}; PATC.set(ctx, m); } return m[name] || (m[name] = ctx.createPattern(TEXC[name], 'repeat')); }
+function texFill(name, x, y, w, h, a = 1) { ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = pat(name); ctx.fillRect(x, y, w, h); ctx.restore(); }
+function txt(s, x, base, px, f, col, align = 'left') { setF(f, px); ctx.textAlign = align; ctx.textBaseline = 'alphabetic'; ctx.fillStyle = col; ctx.fillText(s, x, base); }
+// hold / snap / overshoot: a scale curve that lands hard instead of fading
+function snapK(a) { if (a < 0) return 0; if (a < .07) return lerp(1.3, .965, a / .07); if (a < .17) return lerp(.965, 1.012, (a - .07) / .1); return lerp(1.012, 1, clamp((a - .17) / .2)); }
+const sent = s => s.toLowerCase().replace(/^\W*\w/, m => m.toUpperCase()).replace(/\bi\b/g, 'I').replace(/\bmama\b/g, 'Mama');
+function splitLines(text, f, maxW) { const ws = text.split(' '), out = []; let cur = ''; for (const w of ws) { const t2 = cur ? cur + ' ' + w : w; if (cur && mw(t2, f) > maxW) { out.push(cur); cur = w; } else cur = t2; } if (cur) out.push(cur); return out; }
+// big type block: left aligned, snaps in, lines stacked; returns bottom y
+function bigType(text, x, y, maxW, maxPx, f, col, a, o = {}) {
+  if (a < 0) return y; if (o.sx) maxW /= o.sx; let px = maxPx, lines = splitLines(text, f, maxW / px);
+  for (let k = 0; k < 12 && lines.some(l => mw(l, f) * px > maxW); k++) { px *= .9; lines = splitLines(text, f, maxW / px); }
+  const s = o.noSnap ? 1 : snapK(a), cap = capOf(f) * px, lh = cap * (o.lh || 1.18);
+  if (o.bottom) y -= lines.length * lh;
+  if (o.out) o.out.top = y;
+  ctx.save(); ctx.translate(x, y); ctx.scale(s * (o.sx || 1), s);
+  lines.forEach((l, i) => { if (o.shadow) txt(l, px * .03, (i + 1) * lh + px * .04, px, f, o.shadow); txt(l, 0, (i + 1) * lh, px, f, col); });
+  ctx.restore(); return y + lines.length * lh * s;
+}
+
+/* ============================ v4: phrases (meaning units, not per-word) ============================ */
+const SPLIT_AT = new Set(['a', 'in', 'that', 'on', 'of', 'down', 'to', 'and', 'but', 'so', 'behind', 'up']);
+function chunksOf(L) {
+  if (L._ck) return L._ck;
+  const ws = L.words, out = []; let cur = [];
+  const push = () => { if (cur.length) { out.push(cur); cur = []; } };
+  ws.forEach((w, i) => {
+    const nx = ws[i + 1];
+    if (cur.length && (w.lc === 'pay' || w.lc === 'wreck' || (w.lc === 'go' && nx && nx.lc === 'slow'))) push();
+    cur.push(w);
+    if (w.pause || w.lc === 'someday') push();
+  });
+  push();
+  const res = [];
+  const split = c => { if (c.length <= 5) { res.push(c); return; } let best = -1, bd = 1e9; for (let j = 2; j <= c.length - 2; j++) if (SPLIT_AT.has(c[j].lc)) { const d = Math.abs(j - c.length / 2); if (d < bd) { bd = d; best = j; } } if (best < 0) best = Math.ceil(c.length / 2); split(c.slice(0, best)); split(c.slice(best)); };
+  out.forEach(split);
+  return (L._ck = res.map(c => ({ t: c[0].t, words: c, text: c.map(w => w.text).join(' '), lc: ' ' + c.map(w => w.lc).join(' ') + ' ', i0: ws.indexOf(c[0]) })));
+}
+function chunkState(L, t) { const ck = chunksOf(L); let ci = -1; for (let i = 0; i < ck.length; i++) if (ck[i].t <= t) ci = i; return { ck, ci, ca: ci >= 0 ? t - ck[ci].t : -1 }; }
+const has = (c, w) => c && c.lc.indexOf(' ' + w) >= 0;
+
+/* ============================ v4: shot list (bible scenes → lines of this song) ============================ */
+// scene, variant, transition into the shot. Numbers only; lyric text comes from the loaded file.
+const SHOTS = [
+  ['road', 0, 'hard'], ['road', 1, 'hard'], ['tree', 0, 'rise'], ['tree', 1, 'hard'], ['casino', 0, 'match'], ['well', 0, 'match'], ['speed', 0, 'drop'], ['gauge', 0, 'dial'],
+  ['map', 0, 'shatter'], ['map', 1, 'hard'], ['odo', 0, 'match'], ['toll', 0, 'hard'], ['pillars', 0, 'hard'], ['tollword', 0, 'hard'], ['pillars', 1, 'whip'], ['tollword', 1, 'hard'],
+  ['signs', 0, 'pass'], ['signs', 1, 'whip'], ['signs', 2, 'hard'], ['signs', 3, 'hard'], ['casino', 1, 'pass'], ['well', 1, 'match'], ['speed', 1, 'drop'], ['gauge', 1, 'dial'],
+  ['map', 2, 'shatter'], ['map', 3, 'hard'], ['odo', 1, 'match'], ['toll', 1, 'hard'], ['receipt', 0, 'hard'], ['receipt', 1, 'hard'], ['line', 0, 'barcode'], ['line', 1, 'hard'],
+  ['line', 2, 'hard'], ['line', 3, 'hard'], ['collage', 0, 'hard'], ['ash', 0, 'hard'], ['collage', 1, 'hard'], ['final', 0, 'hard'],
+];
+function fallbackShot(L) {
+  const s = L.lc;
+  if (/\btoll\b/.test(s)) return ['toll', L.idx % 2, 'hard'];
+  if (/\bblack\b|\bbell\b/.test(s)) return ['casino', 0, 'match'];
+  if (/\bwell\b|\bcoin\b/.test(s)) return ['well', 0, 'match'];
+  if (/\bfast\b|\bhell\b/.test(s)) return ['speed', 0, 'drop'];
+  if (/\bwreck\b/.test(s)) return ['gauge', 0, 'whip'];
+  if (/\bsaid\b|\bslow\b/.test(s)) return ['map', 0, 'shatter'];
+  if (/\broad\b|\bburn/.test(s)) return ['map', 1, 'hard'];
+  if (/\btime\b|\bbefore\b/.test(s)) return ['odo', 0, 'match'];
+  if (/\bsigns?\b|\bthing|\bsomething|\bnothing|\beverything/.test(s)) return ['signs', L.idx % 4, 'hard'];
+  if (/\bpay\b/.test(s)) return ['receipt', 0, 'hard'];
+  if (/\bline\b|\bcross/.test(s)) return ['line', 2, 'hard'];
+  if (L.words.every(w => OH.test(w.lc))) return ['pillars', 0, 'hard'];
+  return ['road', L.idx % 2, 'hard'];
+}
+function buildEvents(lines) {
+  const demo = L => typeof L.layout === 'string' && L.layout[0] === '@' && SCN[L.layout.slice(1)];
+  const ev = [], exact = lines.length === SHOTS.length && !demo(lines[0]);
+  lines.forEach((L, i) => {
+    L._ck = null; L._tree = null;
+    const sh = demo(L) ? [L.layout.slice(1), L.kind === 'final' ? 1 : 0, 'hard'] : exact ? SHOTS[i] : fallbackShot(L);
+    [L.scene, L.var, L.trans] = sh;
+    L.words.forEach(w => { if (/^(toll|pay|black|bell|coin|well|fast|hell|wreck|slow|road|time|signs|line|free)$/.test(w.lc)) ev.push({ t: w.t, kind: w.lc, L }); });
+  });
+  ev.sort((a, b) => a.t - b.t); return ev;
+}
+// the price keeps rising through the song, shown inside scenes (receipts, displays, tables), never as a HUD
+function tollValue(t) { const s = sectionAt(t).kind, n = SEC_T.findIndex(x => x === sectionAt(t)); return ['$0.00', '$5.00', '$25.00', '$100.00', '$999.00', '$999.00', 'DUE', 'OVERDUE', 'PAY NOW', 'PAY NOW', 'PAID'][Math.max(0, n)] || (s === 'outro' ? 'PAID' : '$0.00'); }
+const SIGN_MSG = ['GO SLOW', 'NO TURNING BACK', 'PAY AHEAD', 'LAST EXIT', 'TOLL ROAD'];
+
+/* ============================ v4: road world (2.5D) ============================ */
+function roadCam(o = {}) {
+  const f = Math.min(H, W * 1.25) * (o.fov || .95), hz = H * (o.hz ?? .52), camH = o.camH || 1, camX = o.camX || 0;
+  return { f, hz, camH, camX, P: (x, y, z) => z > .05 ? [W / 2 + f * (x - camX) / z, hz + f * (camH - y) / z, f / z] : null };
+}
+function quad(R, pts, fill) { const q = pts.map(p => R.P(...p)); if (q.some(v => !v)) return; ctx.beginPath(); ctx.moveTo(q[0][0], q[0][1]); for (let i = 1; i < q.length; i++) ctx.lineTo(q[i][0], q[i][1]); ctx.closePath(); ctx.fillStyle = fill; ctx.fill(); }
+function drawRoad(e, R, o = {}) {
+  const hw = o.hw || 2.2, tr = o.travel || 0, zn = .3, zf = 140, spd = o.speed || 0;
+  const sky = ctx.createLinearGradient(0, 0, 0, R.hz); sky.addColorStop(0, PAL.asphalt); sky.addColorStop(1, o.glow ? ca(o.glow, .12) : '#0e0e0d');
+  ctx.fillStyle = sky; ctx.fillRect(0, 0, W, R.hz + 1); ctx.fillStyle = '#0b0b0a'; ctx.fillRect(0, R.hz, W, H - R.hz);
+  quad(R, [[-hw, 0, zn], [hw, 0, zn], [hw, 0, zf], [-hw, 0, zf]], PAL.road);
+  texFill('asphalt', 0, R.hz, W, H - R.hz, .7);
+  const edge = o.edge || ca(PAL.steel, .75);
+  for (const u of [-1, 1]) quad(R, [[u * hw * .97, 0, zn], [u * hw, 0, zn], [u * hw, 0, zf], [u * hw * .97, 0, zf]], edge);
+  const D = 3, dl = o.solid ? D : 1.5, lc = o.lineCol || PAL.amber, lw = o.lineW || .07;
+  for (let k = 45; k >= 0; k--) { let z0 = k * D - (tr % D) + zn, z1 = z0 + dl; if (z1 < zn) continue; z0 = Math.max(z0, zn); quad(R, [[-lw, 0, z0], [lw, 0, z0], [lw, 0, z1], [-lw, 0, z1]], lc); }
+  if (o.lights !== false) {
+    const S2 = o.lightGap || 9, lx = hw + 1.3;
+    for (let k = 14; k >= 0; k--) {
+      const z = k * S2 - (tr % S2) + .8; if (z < .35) continue; const base = R.P(lx, 0, z), top = R.P(lx, 3.6, z), arm = R.P(hw + .3, 3.5, z); if (!base || !top || !arm) continue;
+      ctx.strokeStyle = ca(PAL.steel, clamp(1.2 - z / 60)); ctx.lineWidth = Math.max(1, top[2] * .06); ctx.beginPath(); ctx.moveTo(base[0], base[1]); ctx.lineTo(top[0], top[1]); ctx.lineTo(arm[0], arm[1]); ctx.stroke();
+      const r = Math.min(Math.max(2, arm[2] * .9), H * .028), near = clamp((z - .35) / 3), g = ctx.createRadialGradient(arm[0], arm[1], 0, arm[0], arm[1], r * 4); g.addColorStop(0, ca(PAL.amber, .75 * near)); g.addColorStop(1, ca(PAL.amber, 0)); ctx.fillStyle = g; ctx.fillRect(arm[0] - r * 4, arm[1] - r * 4, r * 8, r * 8);
+      if (spd > 10 && near > .2) { const tail = R.P(hw + .3, 3.5, z + spd * .09); if (tail) { ctx.strokeStyle = ca(PAL.amber, .55); ctx.lineWidth = Math.max(1, r * .6); ctx.beginPath(); ctx.moveTo(arm[0], arm[1]); ctx.lineTo(tail[0], tail[1]); ctx.stroke(); if (o.chroma) { ctx.strokeStyle = ca(PAL.red, .35); ctx.beginPath(); ctx.moveTo(arm[0] + r * .6, arm[1]); ctx.lineTo(tail[0] + r * .6, tail[1]); ctx.stroke(); } } }
+      const pool = R.P(hw - .2, 0, z); if (pool && z > 4) { ctx.fillStyle = ca(PAL.amber, .06 * near); ctx.beginPath(); ctx.ellipse(pool[0], pool[1], Math.min(W * .2, pool[2] * 1.4), Math.min(H * .05, pool[2] * .35), 0, 0, 6.283); ctx.fill(); }
+    }
+  }
+}
+// overhead gantry sign facing the camera at depth z
+function gantrySign(R, z, lines, o = {}) {
+  const f = F.cond, capU = o.cap || .42, emU = capU / capOf(f), tw = Math.max(...lines.map(s => mw(s, f))) * emU;
+  const pw = tw + 1.1, ph = lines.length * capU * 1.9 + .45, cx = o.x || 0, top = o.y || 3.9, bot = top - ph;
+  const a = R.P(cx - pw / 2, top, z), b = R.P(cx + pw / 2, bot, z); if (!a || !b) return null;
+  const px = emU * a[2], dark = o.dark !== false;
+  ctx.strokeStyle = ca(PAL.steel, .9); ctx.lineWidth = Math.max(1, a[2] * .07);
+  for (const s2 of [-1, 1]) { const p0 = R.P(cx + s2 * (pw / 2 + .5), 0, z), p1 = R.P(cx + s2 * (pw / 2 + .5), top + .15, z); if (p0 && p1) { ctx.beginPath(); ctx.moveTo(p0[0], p0[1]); ctx.lineTo(p1[0], p1[1]); ctx.stroke(); } }
+  const t1 = R.P(cx - pw / 2 - .5, top + .15, z), t2 = R.P(cx + pw / 2 + .5, top + .15, z); if (t1 && t2) { ctx.beginPath(); ctx.moveTo(t1[0], t1[1]); ctx.lineTo(t2[0], t2[1]); ctx.stroke(); }
+  ctx.fillStyle = dark ? '#161615' : PAL.paper; ctx.fillRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
+  ctx.strokeStyle = dark ? PAL.paper : PAL.ink; ctx.lineWidth = Math.max(1, a[2] * .035); const ins = a[2] * .08; ctx.strokeRect(a[0] + ins, a[1] + ins, b[0] - a[0] - ins * 2, b[1] - a[1] - ins * 2);
+  if (o.drawText !== false) lines.forEach((l, i) => txt(l, (a[0] + b[0]) / 2, a[1] + (b[1] - a[1]) * ((i + .5) / lines.length) + capU * a[2] / 2, px, f, o.textCol || (dark ? PAL.paper : PAL.ink), 'center'));
+  return { x0: a[0], y0: a[1], x1: b[0], y1: b[1], px, s: a[2] };
+}
+function coin(x, y, r, spin = 0, o = {}) {
+  const w = Math.max(r * .08, Math.abs(Math.cos(spin)) * r);
+  ctx.save(); ctx.fillStyle = o.edge || '#5d5a53'; ctx.beginPath(); ctx.ellipse(x + (Math.cos(spin) < 0 ? -1 : 1) * r * .06, y, w, r, 0, 0, 6.283); ctx.fill();
+  ctx.fillStyle = o.face || PAL.steelL; ctx.beginPath(); ctx.ellipse(x, y, w, r, 0, 0, 6.283); ctx.fill();
+  if (w > r * .4) { ctx.strokeStyle = ca(PAL.ink, .5); ctx.lineWidth = Math.max(1, r * .05); ctx.beginPath(); ctx.ellipse(x, y, w * .78, r * .78, 0, 0, 6.283); ctx.stroke(); setF(F.disp, r * .9); ctx.save(); ctx.translate(x, y); ctx.scale(w / r, 1); ctx.fillStyle = ca(PAL.ink, .55); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(o.glyph || '$', 0, r * .05); ctx.restore(); }
+  ctx.restore();
+}
+function ledText(s, x, y, px, col, align = 'center') { setF(F.monoB, px); ctx.textAlign = align; ctx.textBaseline = 'middle'; ctx.save(); ctx.shadowColor = col; ctx.shadowBlur = px * .5; ctx.fillStyle = col; ctx.fillText(s, x, y); ctx.restore(); }
+function ledBoard(x, y, w, h, s, col, blink = false) {
+  ctx.fillStyle = '#0d0d0c'; ctx.fillRect(x, y, w, h); ctx.strokeStyle = ca(PAL.steel, .9); ctx.lineWidth = Math.max(1, h * .03); ctx.strokeRect(x, y, w, h);
+  if (!blink) ledText(s, x + w / 2, y + h / 2, Math.min(h * .55, w * .9 / Math.max(1, mw(s, F.monoB))), col);
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; const g = Math.max(2, h * .06); for (let yy = y; yy < y + h; yy += g) ctx.fillRect(x, yy, w, g * .35);
+}
+function barrierArm(x, y, len, th, ang) {
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang); ctx.fillStyle = PAL.paper; ctx.fillRect(0, -th / 2, len, th);
+  ctx.save(); ctx.beginPath(); ctx.rect(0, -th / 2, len, th); ctx.clip(); ctx.fillStyle = PAL.red; for (let s2 = -th; s2 < len; s2 += th * 2.6) { ctx.beginPath(); ctx.moveTo(s2, th / 2); ctx.lineTo(s2 + th * 1.3, th / 2); ctx.lineTo(s2 + th * 2.3, -th / 2); ctx.lineTo(s2 + th, -th / 2); ctx.fill(); } ctx.restore();
+  ctx.fillStyle = PAL.steelD; circle(0, 0, th * .8); ctx.restore();
+}
+function glassCrack(cx, cy, R, k, seed) {
+  ctx.save(); ctx.strokeStyle = ca(PAL.paper, .85); ctx.lineWidth = Math.max(1, DPR * 1.2); ctx.lineJoin = 'round';
+  for (let i = 0; i < 12; i++) { let x = cx, y = cy, a = i / 12 * 6.283 + hash(seed + i) * .4; ctx.beginPath(); ctx.moveTo(x, y); for (let s2 = 0; s2 < 6; s2++) { a += (hash(seed * 3 + i * 7 + s2) - .5) * .7; const d = R * (.08 + hash(i * 5 + s2) * .14) * k; x += Math.cos(a) * d; y += Math.sin(a) * d; ctx.lineTo(x, y); } ctx.stroke(); }
+  for (let r2 = 1; r2 <= 3; r2++) { ctx.beginPath(); for (let j = 0; j <= 14; j++) { const a = j / 14 * 6.283, rr2 = R * .12 * r2 * k * (.8 + hash(j + r2 * 20) * .4); j ? ctx.lineTo(cx + Math.cos(a) * rr2, cy + Math.sin(a) * rr2) : ctx.moveTo(cx + Math.cos(a) * rr2, cy + Math.sin(a) * rr2); } ctx.stroke(); }
+  ctx.restore();
+}
+function roulette(cx, cy, R, rot, o = {}) {
+  ctx.save(); ctx.translate(cx, cy);
+  ctx.fillStyle = '#1b1a18'; circle(0, 0, R * 1.08); ctx.strokeStyle = ca(PAL.steel, .8); ctx.lineWidth = Math.max(1, R * .012); ctx.beginPath(); ctx.arc(0, 0, R * 1.08, 0, 6.283); ctx.stroke();
+  const n = 37;
+  for (let i = 0; i < n; i++) { const a0 = rot + i / n * 6.283, a1 = a0 + 6.283 / n; ctx.beginPath(); ctx.arc(0, 0, R, a0, a1); ctx.arc(0, 0, R * .72, a1, a0, true); ctx.closePath(); ctx.fillStyle = i === (o.red ?? 7) ? PAL.red : i % 2 ? '#101010' : '#1d1c1a'; ctx.fill(); ctx.strokeStyle = ca(PAL.steel, .35); ctx.lineWidth = 1; ctx.stroke();
+    ctx.save(); ctx.rotate((a0 + a1) / 2 + Math.PI / 2); setF(F.monoR, R * .045); ctx.fillStyle = ca(PAL.paper, .75); ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String((o.numbers || WHEELN)[i % 37]), 0, -R * .86); ctx.restore(); }
+  ctx.fillStyle = '#131312'; circle(0, 0, R * .7); ctx.strokeStyle = ca(PAL.steel, .7); ctx.beginPath(); ctx.arc(0, 0, R * .7, 0, 6.283); ctx.stroke();
+  ctx.strokeStyle = ca(PAL.steelL, .8); ctx.lineWidth = Math.max(1, R * .03); ctx.beginPath(); for (let i = 0; i < 4; i++) { const a = -rot * 1.3 + i * Math.PI / 2; ctx.moveTo(0, 0); ctx.lineTo(Math.cos(a) * R * .55, Math.sin(a) * R * .55); } ctx.stroke();
+  ctx.fillStyle = PAL.steelL; circle(0, 0, R * .1);
+  texFill('halftone', -R * 1.1, -R * 1.1, R * 2.2, R * 2.2, 1);
+  ctx.restore();
+}
+const WHEELN = [0, 32, 15, 19, 4, 21, 2, 25, 17, 34, 6, 27, 13, 36, 11, 30, 8, 23, 10, 5, 24, 16, 33, 1, 20, 14, 31, 9, 22, 18, 29, 7, 28, 12, 35, 3, 26];
+function casinoBell(cx, cy, R, swing, strike) {
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(swing);
+  ctx.fillStyle = PAL.steelD; ctx.fillRect(-R * .08, -R * 1.25, R * .16, R * .35);
+  ctx.fillStyle = PAL.steelL; ctx.beginPath(); ctx.moveTo(-R * .35, -R * .9); ctx.bezierCurveTo(-R * .4, -R * .2, -R * .75, R * .1, -R, R * .45); ctx.lineTo(R, R * .45); ctx.bezierCurveTo(R * .75, R * .1, R * .4, -R * .2, R * .35, -R * .9); ctx.quadraticCurveTo(0, -R * 1.1, -R * .35, -R * .9); ctx.fill();
+  ctx.fillStyle = ca(PAL.paper, .35); ctx.beginPath(); ctx.moveTo(-R * .22, -R * .8); ctx.bezierCurveTo(-R * .26, -R * .2, -R * .5, R * .1, -R * .7, R * .4); ctx.lineTo(-R * .55, R * .4); ctx.bezierCurveTo(-R * .35, R * .05, -R * .15, -R * .25, -R * .12, -R * .8); ctx.fill();
+  ctx.fillStyle = PAL.steel; ctx.fillRect(-R * 1.05, R * .42, R * 2.1, R * .12);
+  ctx.fillStyle = PAL.amber; circle(Math.sin(-swing * 2) * R * .2, R * .66, R * .12);
+  ctx.restore();
+  if (strike > 0) { ctx.save(); ctx.strokeStyle = ca(PAL.paper, strike * .8); ctx.lineWidth = Math.max(1, R * .03); for (let j = 1; j <= 3; j++) { const r2 = R * (1.2 + j * .3 + (1 - strike) * .6); ctx.beginPath(); ctx.arc(cx, cy, r2, -.6, .6); ctx.stroke(); ctx.beginPath(); ctx.arc(cx, cy, r2, Math.PI - .6, Math.PI + .6); ctx.stroke(); } ctx.restore(); }
+}
+function mapPaper(e, o = {}) {
+  ctx.fillStyle = pat('paper'); ctx.fillRect(0, 0, W, H);
+  const off = o.pan || 0, sc = Math.min(W, H) / 540;
+  ctx.save(); ctx.translate(-off, 0);
+  ctx.strokeStyle = 'rgba(80,70,50,.12)'; ctx.lineWidth = 1; for (let k = 0; k < 14; k++) { ctx.beginPath(); for (let x = -W * .2; x <= W * 1.4; x += 12) { const y = H * (.08 + k * .07) + Math.sin(x * .006 + k) * H * .03 + Math.sin(x * .017 + k * 2) * H * .008; x > -W * .2 ? ctx.lineTo(x, y) : ctx.moveTo(x, y); } ctx.stroke(); }
+  ctx.setLineDash([6 * sc, 5 * sc]); ctx.strokeStyle = 'rgba(80,70,50,.35)'; ctx.beginPath(); ctx.moveTo(W * .15, 0); ctx.bezierCurveTo(W * .3, H * .4, W * .1, H * .6, W * .25, H); ctx.moveTo(W * .85, 0); ctx.bezierCurveTo(W * .7, H * .3, W * 1.05, H * .7, W * .8, H); ctx.stroke(); ctx.setLineDash([]);
+  ctx.restore();
+  ctx.fillStyle = 'rgba(60,50,30,.07)'; ctx.fillRect(W / 3 - 1, 0, 2, H); ctx.fillRect(W * 2 / 3 - 1, 0, 2, H); ctx.fillRect(0, H / 2 - 1, W, 2);
+}
+const ROUTES = [[[-.1, .78], [.12, .7], [.3, .72], [.45, .55], [.62, .5], [.78, .36], [1.1, .3]], [[.2, 1.1], [.26, .82], [.3, .72], [.36, .5], [.34, .2], [.4, -.1]], [[-.1, .3], [.2, .38], [.45, .55], [.6, .75], [.9, .82], [1.1, .95]]];
+function routePath(pts, off) { ctx.beginPath(); pts.forEach(([x, y], i) => { const X = x * W - off, Y = y * H; i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y); }); }
+function routePoint(pts, u, off) { const n = pts.length - 1, f = clamp(u) * n, i = Math.min(n - 1, Math.floor(f)), k = f - i; return [lerp(pts[i][0], pts[i + 1][0], k) * W - off, lerp(pts[i][1], pts[i + 1][1], k) * H]; }
+function shield(x, y, s, label) { ctx.fillStyle = PAL.ink; ctx.beginPath(); ctx.moveTo(x - s, y - s); ctx.lineTo(x + s, y - s); ctx.lineTo(x + s, y + s * .3); ctx.quadraticCurveTo(x + s, y + s, x, y + s * 1.2); ctx.quadraticCurveTo(x - s, y + s, x - s, y + s * .3); ctx.closePath(); ctx.fill(); txt(label, x, y + s * .35, s * .9, F.cond, PAL.paper, 'center'); }
+function odometer(cx, cy, w, h, digits, rollK, o = {}) {
+  ctx.save(); ctx.fillStyle = '#161615'; rr(cx - w / 2 - h * .25, cy - h / 2 - h * .25, w + h * .5, h * 1.5, h * .25); ctx.fill(); ctx.strokeStyle = ca(PAL.steel, .8); ctx.lineWidth = Math.max(1, h * .03); ctx.stroke();
+  const n = digits.length, dw = w / n;
+  digits.forEach((d, i) => {
+    const x = cx - w / 2 + i * dw; if (d === ':') { txt(':', x + dw / 2, cy + h * .3, h * .8, F.monoB, o.col || PAL.paper, 'center'); return; }
+    ctx.fillStyle = i % 2 ? '#0e0e0d' : '#121211'; ctx.fillRect(x + dw * .06, cy - h / 2, dw * .88, h);
+    ctx.save(); ctx.beginPath(); ctx.rect(x + dw * .06, cy - h / 2, dw * .88, h); ctx.clip();
+    const k = (o.roll && o.roll[i] != null ? o.roll[i] : rollK), prev = o.prev ? o.prev[i] : d, off = eOutBack(clamp(k)) * h;
+    if (prev !== d && k < 1) { txt(prev, x + dw / 2, cy + h * .33 - off, h * .82, F.monoB, o.col || PAL.paper, 'center'); txt(d, x + dw / 2, cy + h * .33 - off + h, h * .82, F.monoB, o.col || PAL.paper, 'center'); }
+    else txt(d, x + dw / 2, cy + h * .33, h * .82, F.monoB, o.col || PAL.paper, 'center');
+    const g = ctx.createLinearGradient(0, cy - h / 2, 0, cy + h / 2); g.addColorStop(0, 'rgba(0,0,0,.7)'); g.addColorStop(.3, 'rgba(0,0,0,0)'); g.addColorStop(.7, 'rgba(0,0,0,0)'); g.addColorStop(1, 'rgba(0,0,0,.7)'); ctx.fillStyle = g; ctx.fillRect(x, cy - h / 2, dw, h);
+    ctx.restore();
+  });
+  const g2 = ctx.createRadialGradient(cx, cy, 0, cx, cy, w * .8); g2.addColorStop(0, ca(PAL.amber, .12)); g2.addColorStop(1, ca(PAL.amber, 0)); ctx.fillStyle = g2; ctx.fillRect(cx - w, cy - h * 2, w * 2, h * 4);
+  ctx.restore();
+}
+function warnings(x, y, s, lit, labels = ['ENGINE', 'BRAKE', 'TEMP', 'CONTROL']) {
+  labels.forEach((l, i) => { const on = lit[i]; const bx = x + i * s * 4.4; ctx.fillStyle = on ? (i % 2 ? PAL.amber : PAL.red) : '#1a1918'; rr(bx, y, s * 4, s * 1.4, s * .2); ctx.fill(); if (on) { ctx.save(); ctx.shadowColor = i % 2 ? PAL.amber : PAL.red; ctx.shadowBlur = s * 1.2; ctx.fill(); ctx.restore(); } txt(l, bx + s * 2, y + s * 1, s * .72, F.monoB, on ? PAL.ink : ca(PAL.steel, .8), 'center'); });
+}
+
+/* ============================ v4: scenes ============================ */
+const SCN = {};
+const SAFE = () => ({ x: Math.max(W * .047, 16 * DPR), y: Math.max(H * .065, 16 * DPR) });
+// SCENE 01 — night road, lyric phrases on overhead signs the camera passes under
+SCN.road = (e, L, st, v) => {
+  const tr = e.t * 5.5, R = roadCam({ hz: .54, camH: 1.05, camX: Math.sin(e.t * .3) * .15 });
+  drawRoad(e, R, { travel: tr, speed: 5 });
+  const n = st.ck.length;
+  for (let i = n - 1; i >= 0; i--) {
+    const c = st.ck[i], nt = i + 1 < n ? st.ck[i + 1].t : L.tEnd, dur = Math.max(.6, nt - c.t), a = e.t - c.t; if (a < -.4) continue;
+    const z = a < 0 ? lerp(38, 10, eOutCubic((a + .4) / .4)) : lerp(10, .45, eInCubic(clamp(a / (dur + .4)))); if (z < .5) continue;
+    const words = c.text.split(' '), freeDrop = v === 1 && i === n - 1 && /\bFREE$/.test(c.text);
+    const per = e.Z.P ? 2 : 3, lines = words.length <= per ? [c.text] : e.Z.P ? words.reduce((o, w, j) => { if (j % 2) o[o.length - 1] += ' ' + w; else o.push(w); return o; }, []) : [words.slice(0, Math.ceil(words.length / 2)).join(' '), words.slice(Math.ceil(words.length / 2)).join(' ')];
+    if (!freeDrop) { gantrySign(R, z, lines, { dark: i % 2 === 0 }); continue; }
+    // FREE falls off, a price tag hangs behind it
+    const head = words.slice(0, -1).join(' '), g = gantrySign(R, z, [head + ' FREE'], { dark: true, drawText: false }); if (!g) continue;
+    const f = F.cond, full = mw(head + ' FREE', f), wh = mw(head + ' ', f) / full, px = g.px, midY = (g.y0 + g.y1) / 2 + capOf(f) * px / 2;
+    const tx0 = (g.x0 + g.x1) / 2 - full * px / 2; txt(head, tx0, midY, px, f, PAL.paper);
+    const split = tx0 + wh * full * px, drop = clamp((a - .45) / .9);
+    const tagY = g.y0 + (g.y1 - g.y0) * .3, sw = Math.sin(e.t * 3) * .12 * clamp(drop * 2);
+    ctx.save(); ctx.translate(split + (g.x1 - split) * .5, g.y0); ctx.rotate(sw); ctx.strokeStyle = PAL.steelL; ctx.lineWidth = Math.max(1, g.s * .02); ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, tagY - g.y0); ctx.stroke();
+    ctx.fillStyle = PAL.paper; ctx.beginPath(); ctx.moveTo(-g.s * .35, tagY - g.y0); ctx.lineTo(g.s * .35, tagY - g.y0); ctx.lineTo(g.s * .35, tagY - g.y0 + g.s * .5); ctx.lineTo(-g.s * .35, tagY - g.y0 + g.s * .5); ctx.closePath(); ctx.fill();
+    txt('$ ?', 0, tagY - g.y0 + g.s * .36, g.s * .28, F.monoB, PAL.red, 'center'); ctx.restore();
+    ctx.save(); const fy = drop * drop * H * 1.2, fr = drop * .9; ctx.translate(split, g.y0 + fy); ctx.rotate(fr); ctx.fillStyle = '#161615'; ctx.fillRect(0, 0, g.x1 - split, g.y1 - g.y0); ctx.strokeStyle = PAL.paper; ctx.lineWidth = Math.max(1, g.s * .035); ctx.strokeRect(g.s * .08, g.s * .08, g.x1 - split - g.s * .16, g.y1 - g.y0 - g.s * .16);
+    txt('FREE', (g.x1 - split) / 2, (g.y1 - g.y0) / 2 + capOf(f) * px / 2, px, f, PAL.paper, 'center'); ctx.restore();
+  }
+  if (L.idx === 0 && e.t < L.t0 + 1.2) { const sf = SAFE(); ctx.globalAlpha = clamp(1 - (e.t - L.t0) / 1.2); txt('EVERY ROAD HAS A PRICE', sf.x, H - sf.y, Math.max(10 * DPR, H * .018), F.monoR, ca(PAL.paper, .7)); ctx.globalAlpha = 1; }
+};
+// SCENE 02 — top-down road branching into a tree; bills hang, then fall; a single coin remains
+function treeSegs(L) {
+  if (L._tree) return L._tree; const segs = [];
+  const grow = (x, y, a, len, d, id) => { const x2 = x + Math.cos(a) * len, y2 = y + Math.sin(a) * len; segs.push({ x, y, x2, y2, d, id }); if (d >= 5) return; const sp = .38 + hash(id * 7) * .3; grow(x2, y2, a - sp, len * .74, d + 1, id * 2 + 1); grow(x2, y2, a + sp * (.8 + hash(id) * .4), len * .7, d + 1, id * 2 + 2); if (d < 2 && hash(id * 13) > .5) grow(x2, y2, a + (hash(id * 3) - .5) * .3, len * .6, d + 1, id * 2 + 99); };
+  grow(0, .5, -Math.PI / 2, .28, 0, 1); return (L._tree = segs);
+}
+SCN.tree = (e, L, st, v) => {
+  ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H); texFill('asphalt', 0, 0, W, H, .8);
+  const segs = treeSegs(L), M = Math.min(W, H) * 1.05, rot = (e.t - L.t0) * .06 * (v ? -1 : 1) + (v ? .25 : 0);
+  let g; if (v === 0) g = eOutCubic(clamp((e.t - L.t0) / Math.max(.8, (L.tEnd - L.t0) * .85))); else { const tc = st.ck.length > 1 ? st.ck[st.ck.length - 1].t : L.t0 + 1.5, drop = st.ck.findIndex(c => has(c, 'trees')); const td = drop >= 0 ? st.ck[drop].t + .35 : tc; g = 1 - eInOut(clamp((e.t - td) / 1.3)); }
+  const cx = W * (e.Z.P ? .5 : .66), cy = H * .5;
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); ctx.lineCap = 'round';
+  const fall = v === 1 ? clamp((e.t - (st.ck.find(c => has(c, 'trees')) || st.ck[0] || { t: L.t0 }).t) / 1.6) : 0;
+  for (const s of segs) {
+    const p = clamp(g * 6 - s.d); if (p <= 0) continue; const x2 = lerp(s.x, s.x2, p), y2 = lerp(s.y, s.y2, p);
+    ctx.strokeStyle = s.d === 0 ? '#2b2a27' : '#232220'; ctx.lineWidth = M * (.05 - s.d * .007); ctx.beginPath(); ctx.moveTo(s.x * M, s.y * M); ctx.lineTo(x2 * M, y2 * M); ctx.stroke();
+    ctx.strokeStyle = s.d === 0 ? PAL.amber : ca(PAL.steel, .7); ctx.lineWidth = Math.max(1, M * (s.d === 0 ? .004 : .002)); ctx.setLineDash(s.d === 0 ? [M * .02, M * .016] : []); ctx.beginPath(); ctx.moveTo(s.x * M, s.y * M); ctx.lineTo(x2 * M, y2 * M); ctx.stroke(); ctx.setLineDash([]);
+    if (s.d >= 4 && p >= 1) {
+      const hangT = L.t0 + (st.ck[0] ? (st.ck[st.ck.length - 1].t - L.t0) * (hash(s.id) * .8) : 0), ha = v === 0 ? e.t - hangT : 1;
+      if (ha > 0 && hash(s.id * 5) > .35) {
+        const fx = fall > 0 ? (hash(s.id * 9) - .5) * fall * M * .3 : 0, fy = fall * fall * M * (.8 + hash(s.id) * .6), rot2 = Math.sin(e.t * 3 + s.id) * .2 + fall * (hash(s.id * 11) - .5) * 6;
+        ctx.save(); ctx.globalAlpha = clamp(1 - fall * 1.2) * clamp(ha / .15); ctx.translate(s.x2 * M + fx, s.y2 * M + fy); ctx.rotate(rot2); const bw = M * .05, bh = M * .026;
+        ctx.fillStyle = PAL.paper; ctx.fillRect(-bw / 2, 0, bw, bh); ctx.strokeStyle = PAL.steel; ctx.lineWidth = 1; ctx.strokeRect(-bw / 2 + 2, 2, bw - 4, bh - 4); txt('$', 0, bh * .78, bh * .8, F.disp, PAL.ink, 'center'); ctx.restore();
+      }
+    }
+  }
+  ctx.restore();
+  if (v === 1 && g < .35) { const q = eOutCubic(clamp((.35 - g) / .35)); coin(cx, lerp(cy + M * .45, cy, q), M * lerp(.03, .1, q), e.t * 5); }
+  const sf = SAFE(); let y = sf.y + H * .04;
+  st.ck.forEach((c, i) => { const a = e.t - c.t; if (a < 0) return; const cur = i === st.ci; y = bigType(c.text, sf.x, y, W * (e.Z.P ? .9 : .42), H * (cur ? .1 : .055), F.disp, cur ? PAL.paper : ca(PAL.steel, .9), a) + H * .015; });
+};
+// SCENE 03 — coin → roulette, one red slot, BLACK swallows the frame, casino bell
+SCN.casino = (e, L, st, v) => {
+  ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H);
+  const fast = v === 1, a = e.t - L.t0, rise = eInOut(clamp(a / (fast ? .6 : 1.3))), M = Math.min(W, H);
+  const cx = W * (e.Z.P ? .5 : .6), cy = H * .52, R = M * .36 * lerp(2.8, 1, rise), spin = e.t * (fast ? 2.4 : 1.1);
+  if (rise > .05) roulette(cx, cy, R, spin, { red: 7 });
+  const ca2 = spin * -1.7 + a * .6, cr = R * .9; coin(lerp(cx, cx + Math.cos(ca2) * cr, rise), lerp(cy, cy + Math.sin(ca2) * cr, rise), lerp(M * .22, M * .025, rise), e.t * (fast ? 14 : 7));
+  const bi = st.ck.findIndex(c => has(c, 'black')), bw = bi >= 0 ? st.ck[bi].words.find(w => w.lc === 'black') : null, ba = bw ? e.t - bw.t : -1;
+  const belli = st.ck.findIndex(c => has(c, 'bell')), bellW = belli >= 0 ? st.ck[belli].words.find(w => w.lc === 'bell') : null, bella = bellW ? e.t - bellW.t : -1;
+  const sf = SAFE();
+  if (bi >= 0 && e.t >= st.ck[bi].t && ba < 0) { let y = sf.y + H * .05; st.ck[bi].words.forEach(w => { const aw = e.t - w.t; if (aw >= 0) y = bigType(w.text, sf.x, y, W * .4, H * .13, F.disp, PAL.paper, aw) + H * .01; }); }
+  else if (st.ci >= 0 && ba < 0 && st.ck[st.ci]) bigType(st.ck[st.ci].text, sf.x, sf.y + H * .05, W * .4, H * .1, F.disp, PAL.paper, st.ca);
+  if (ba >= 0) {
+    const cover = eOutCubic(clamp(ba / .22)), rMax = Math.hypot(W, H);
+    ctx.fillStyle = '#030303'; circle(cx, cy, rMax * cover);
+    const bellOn = bella >= 0 || (belli >= 0 && e.t >= st.ck[belli].t - .05);
+    if (!bellOn) { const px = fit('BLACK', F.disp, W * .92, H * .6); ctx.save(); ctx.translate(W / 2, H / 2 + capOf(F.disp) * px / 2); const s = snapK(ba); ctx.scale(s * 1.02, s); txt('BLACK', 0, 0, px, F.disp, PAL.paper, 'center'); ctx.restore(); }
+    if (belli >= 0 && e.t >= st.ck[belli].t) {
+      const sa = bella >= 0 ? bella : -1, swing = sa >= 0 ? Math.sin(sa * 14) * .25 * Math.exp(-sa * 2.5) : Math.sin(e.t * 3) * .03;
+      casinoBell(W * .5, H * .5, M * .2, swing, sa >= 0 ? clamp(1 - sa / .8) : 0);
+      bigType(st.ck[belli].text, sf.x, sf.y + H * .03, W * .5, H * .09, F.disp, PAL.paper, e.t - st.ck[belli].t);
+      if (sa >= 0 && sa < .04 && S.flash) { ctx.fillStyle = 'rgba(255,250,240,.85)'; ctx.fillRect(0, 0, W, H); }
+    }
+  }
+  if (!fast && a < 1.6) { txt(`TABLE MIN ${tollValue(e.t)}`, W - sf.x, H - sf.y, Math.max(10 * DPR, H * .02), F.monoR, ca(PAL.paper, .6), 'right'); }
+};
+// SCENE 04 — well mouth (matching the bell), coin falls, camera dives, lands on a highway, coin becomes a wheel
+SCN.well = (e, L, st, v) => {
+  ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H);
+  const M = Math.min(W, H), cx = W / 2, cy = H / 2, a = e.t - L.t0, c1 = st.ck[1] ? st.ck[1].t : L.t0 + 2, dive = clamp((e.t - (c1 - .4)) / 1.2), land = clamp((e.t - (c1 + .8)) / .6);
+  if (land < 1) {
+    const zoom = Math.pow(8, eInCubic(dive));
+    ctx.save(); ctx.translate(cx, cy); ctx.scale(zoom * 1.4, zoom * 1.4);
+    for (let k = 14; k >= 0; k--) { const r = M * .18 * Math.pow(.82, k); ctx.fillStyle = k % 2 ? '#1a1918' : '#141312'; circle(0, 0, r); ctx.strokeStyle = ca(PAL.steel, .35); ctx.lineWidth = 1 / zoom; ctx.beginPath(); ctx.arc(0, 0, r, 0, 6.283); ctx.stroke(); }
+    ctx.fillStyle = '#050505'; circle(0, 0, M * .18 * Math.pow(.82, 15));
+    ctx.strokeStyle = ca(PAL.steel, .8); ctx.lineWidth = M * .05; ctx.beginPath(); ctx.arc(0, 0, M * .2, 0, 6.283); ctx.stroke();
+    ctx.strokeStyle = PAL.asphalt; ctx.lineWidth = M * .004; for (let i = 0; i < 24; i++) { const an = i / 24 * 6.283; ctx.beginPath(); ctx.moveTo(Math.cos(an) * M * .175, Math.sin(an) * M * .175); ctx.lineTo(Math.cos(an) * M * .225, Math.sin(an) * M * .225); ctx.stroke(); }
+    ctx.restore();
+    const cf = clamp((a - .15) / Math.max(.6, c1 - L.t0)); coin(cx, lerp(-M * .1, cy, eInCubic(cf)), lerp(M * .08, M * .03, cf), e.t * 9);
+    if (st.ck[0] && dive < .3) { const f = F.cond, s2 = st.ck[0].text, R0 = M * .38, px = Math.min(M * .06, 6.283 * R0 * .45 / mw(s2 + ' ', f)); let an = -Math.PI / 2 - mw(s2, f) * px / R0 / 2; const aa = e.t - st.ck[0].t; ctx.save(); ctx.globalAlpha = clamp(aa / .1) * (1 - dive * 3); setF(f, px); ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+      for (const ch of s2) { const cw = mw(ch, f) * px; ctx.save(); ctx.translate(cx + Math.cos(an + cw / R0 / 2) * R0, cy + Math.sin(an + cw / R0 / 2) * R0); ctx.rotate(an + cw / R0 / 2 + Math.PI / 2); ctx.fillStyle = PAL.paper; ctx.fillText(ch, 0, 0); ctx.restore(); an += cw / R0; } ctx.restore(); }
+  }
+  if (dive > .6) {
+    const k = clamp((dive - .6) / .4); ctx.save(); ctx.globalAlpha = Math.max(k, land);
+    ctx.fillStyle = PAL.road; ctx.fillRect(W * .32, 0, W * .36, H); texFill('asphalt', W * .32, 0, W * .36, H, .8);
+    ctx.fillStyle = ca(PAL.steel, .8); ctx.fillRect(W * .32, 0, Math.max(2, W * .004), H); ctx.fillRect(W * .68 - Math.max(2, W * .004), 0, Math.max(2, W * .004), H);
+    const sp = land > 0 ? (e.t - (c1 + .8)) * H * 2.2 : 0; ctx.fillStyle = PAL.amber; for (let y = -H * .12 + (sp % (H * .12)); y < H; y += H * .12) ctx.fillRect(W / 2 - W * .004, y, W * .008, H * .06);
+    ctx.restore();
+    const wr = lerp(M * .03, M * .08, land), wy = lerp(cy, H * .62, land);
+    if (land < .3) coin(cx, wy, wr, e.t * 9);
+    else { ctx.save(); ctx.translate(cx + W * .09, wy); ctx.fillStyle = '#1c1b19'; circle(0, 0, wr); ctx.strokeStyle = PAL.steelL; ctx.lineWidth = Math.max(1, wr * .08); ctx.beginPath(); ctx.arc(0, 0, wr * .55, 0, 6.283); ctx.stroke(); const rr2 = -(e.t - c1) * 14; ctx.beginPath(); for (let i = 0; i < 5; i++) { const an = rr2 + i * 1.2566; ctx.moveTo(0, 0); ctx.lineTo(Math.cos(an) * wr * .55, Math.sin(an) * wr * .55); } ctx.stroke(); ctx.restore(); }
+    if (land > .3) { const rpm = clamp((e.t - (c1 + .8)) / 1.5), gx = W - SAFE().x - M * .12, gy = H - SAFE().y - M * .05; ctx.strokeStyle = ca(PAL.steel, .8); ctx.lineWidth = Math.max(1, M * .006); ctx.beginPath(); ctx.arc(gx, gy, M * .1, Math.PI, 0); ctx.stroke(); const na = Math.PI + rpm * Math.PI * .92; ctx.strokeStyle = PAL.red; ctx.lineWidth = Math.max(2, M * .008); ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx + Math.cos(na) * M * .09, gy + Math.sin(na) * M * .09); ctx.stroke(); txt('RPM ×1000', gx, gy + M * .04, Math.max(9 * DPR, M * .022), F.monoR, ca(PAL.paper, .7), 'center'); }
+  }
+  const sf = SAFE(); if (st.ck[1] && e.t >= st.ck[1].t) bigType(st.ck[1].text, sf.x, sf.y + H * .05 + dive * H * .12, W * .4, H * .1, F.disp, PAL.paper, e.t - st.ck[1].t);
+};
+// SCENE 04b / 10 — speed: lamps stretch into lines, speed ramps on the phrases
+function travelOf(L, t, spdAt) { let d = 0; const n = 40, dt = (t - L.t0) / n; for (let i = 0; i < n; i++) d += spdAt(L.t0 + (i + .5) * dt) * dt; return d; }
+SCN.speed = (e, L, st, v) => {
+  const ck = st.ck, fi = ck.findIndex(c => has(c, 'fast')), hi = ck.findIndex(c => has(c, 'hell'));
+  const spdAt = t => { let s2 = 7; if (fi >= 0 && t >= ck[fi].t) s2 = 18; if (hi >= 0) { const h0 = ck[hi].t; if (t >= h0 - .25 && t < h0) s2 = 3; else if (t >= h0) s2 = 18 + 55 * eOutCubic(clamp((t - h0) / .5)); } return s2; };
+  const spd = spdAt(e.t), tr = travelOf(L, e.t, spdAt) + L.t0 * 7;
+  let fov = .95, sx = 1, hw = 2.2;
+  if (v === 1) { const fa = ck.filter(c => has(c, 'fast')); if (fa[0] && e.t >= fa[0].t) sx = 1 + .28 * eOutBack(clamp((e.t - fa[0].t) / .25)); if (fa[1] && e.t >= fa[1].t) fov = .95 * (1 - .35 * eOutCubic(clamp((e.t - fa[1].t) / .3))); if (hi >= 0 && e.t >= ck[hi].t) hw = 2.2 + 14 * eInCubic(clamp((e.t - ck[hi].t) / 1.4)); }
+  ctx.save(); ctx.translate(W / 2, H / 2); ctx.scale(sx, 1); ctx.translate(-W / 2, -H / 2);
+  const R = roadCam({ hz: .5, camH: .8, fov, camX: Math.sin(e.t * 7) * .02 * spd / 20 });
+  drawRoad(e, R, { travel: tr, speed: spd, hw, chroma: spd > 30, lightGap: 7 });
+  ctx.restore();
+  const sf = SAFE();
+  if (st.ci >= 0) { const c = ck[st.ci], stretch = 1 + clamp((spd - 7) / 60) * .8; ctx.save(); if (spd > 30) { ctx.globalAlpha = .5; bigType(c.text, sf.x - W * .006, H * .16, W * .7, H * .15, F.disp, PAL.red, st.ca, { sx: stretch }); ctx.globalAlpha = 1; } bigType(c.text, sf.x, H * .16, W * .7, H * .15, F.disp, PAL.paper, st.ca, { sx: stretch }); ctx.restore(); }
+  const g = W - sf.x; txt(`${Math.round(spd * 2.4)} MPH`, g, H - sf.y, Math.max(10 * DPR, H * .022), F.monoB, spd > 30 ? PAL.red : ca(PAL.paper, .75), 'right');
+};
+// SCENE 05 — speedometer climbs, warnings, a beat of stillness, glass shatters
+SCN.gauge = (e, L, st, v) => {
+  ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H);
+  const ck = st.ck, pi = ck.findIndex(c => has(c, 'push')), gi = ck.findIndex(c => has(c, 'gonna') && !has(c, 'wreck')), wi = ck.findIndex(c => has(c, 'wreck'));
+  const still = gi >= 0 && e.t >= ck[gi].t && (wi < 0 || e.t < ck[wi].t), wrecked = wi >= 0 && e.t >= ck[wi].t, wa = wrecked ? e.t - ck[wi].t : 0;
+  const k = clamp((e.t - L.t0) / Math.max(1, (wi >= 0 ? ck[wi].t : L.tEnd) - L.t0)), val = still ? 150 : wrecked ? 160 : lerp(40, 150, eInCubic(k)) + (v ? 10 : 0);
+  const vib = still ? 0 : clamp(val / 150) * (v ? 1.5 : 1) * (wrecked ? 0 : 1), M = Math.min(W, H);
+  ctx.save(); ctx.translate(Math.sin(e.t * 83) * vib * M * .006, Math.cos(e.t * 71) * vib * M * .006);
+  const cx = W * (e.Z.P ? .5 : .58), cy = H * .56, R = M * .36;
+  ctx.fillStyle = '#121211'; circle(cx, cy, R * 1.08); ctx.strokeStyle = ca(PAL.steel, .9); ctx.lineWidth = Math.max(2, R * .02); ctx.beginPath(); ctx.arc(cx, cy, R * 1.08, 0, 6.283); ctx.stroke();
+  const A0 = Math.PI * .75, SW = Math.PI * 1.5, ang = x => A0 + clamp(x / 180) * SW;
+  for (let s2 = 0; s2 <= 180; s2 += 5) { const an = ang(s2), big = s2 % 20 === 0; ctx.strokeStyle = s2 >= 140 ? PAL.red : ca(PAL.paper, big ? .9 : .4); ctx.lineWidth = Math.max(1, R * (big ? .015 : .006)); ctx.beginPath(); ctx.moveTo(cx + Math.cos(an) * R * (big ? .82 : .88), cy + Math.sin(an) * R * (big ? .82 : .88)); ctx.lineTo(cx + Math.cos(an) * R * .96, cy + Math.sin(an) * R * .96); ctx.stroke(); if (big) txt(String(s2), cx + Math.cos(an) * R * .68, cy + Math.sin(an) * R * .68 + R * .03, R * .09, F.cond, s2 >= 140 ? PAL.red : PAL.paper, 'center'); }
+  const na = ang(val + Math.sin(e.t * 40) * vib * 2); ctx.strokeStyle = PAL.amber; ctx.lineWidth = Math.max(2, R * .025); ctx.lineCap = 'round'; ctx.save(); ctx.shadowColor = PAL.amber; ctx.shadowBlur = R * .05; ctx.beginPath(); ctx.moveTo(cx - Math.cos(na) * R * .12, cy - Math.sin(na) * R * .12); ctx.lineTo(cx + Math.cos(na) * R * .9, cy + Math.sin(na) * R * .9); ctx.stroke(); ctx.restore();
+  ctx.fillStyle = PAL.steelD; circle(cx, cy, R * .07);
+  txt('MPH', cx, cy + R * .35, R * .07, F.monoR, ca(PAL.paper, .6), 'center'); txt(`ODO ${String(1220 + Math.floor((e.t - L.t0) * 30)).padStart(6, '0')}`, cx, cy + R * .5, R * .065, F.monoB, ca(PAL.paper, .8), 'center');
+  const lit = [0, 1, 2, 3].map(i => pi >= 0 && e.t >= ck[pi].t + i * e.clk.spb * .5 && (!still || Math.floor(e.t * 6) % 2 === 0));
+  warnings(cx - R * .9, cy + R * .7, R * .1, lit);
+  if (wrecked) { glassCrack(cx + R * .15, cy - R * .2, R * 2.2, eOutCubic(clamp(wa / .12)), L.idx + 5); ctx.fillStyle = `rgba(255,250,240,${S.flash ? clamp(1 - wa / .08) * .7 : 0})`; ctx.fillRect(-W, -H, W * 3, H * 3); }
+  ctx.restore();
+  const sf = SAFE();
+  if (st.ci >= 0) { const c = ck[st.ci]; bigType(c.text, sf.x, sf.y + H * .03, W * (e.Z.P ? .9 : .45), H * (wrecked ? .14 : .1), F.disp, wrecked ? PAL.red : PAL.paper, st.ca); if (wrecked) glassCrack(sf.x + W * .15, sf.y + H * .1, H * .5, eOutCubic(clamp(wa / .12)), 99); }
+};
+// SCENE 06 / 11 — vintage road map, serif letter voice, a dot wearing the same route red
+SCN.map = (e, L, st, v) => {
+  const a = e.t - L.t0, pan = a * W * .012 + v * W * .05, unfold = v % 2 === 1 ? eOutCubic(clamp(a / .7)) : 1;
+  ctx.save(); if (unfold < 1) { ctx.translate(W / 2, H / 2); ctx.scale(lerp(.34, 1, unfold), 1); ctx.translate(-W / 2, -H / 2); }
+  mapPaper(e, { pan });
+  const heat = v % 2 === 1 ? eInOut(clamp(a / Math.max(1, L.tEnd - L.t0))) : 0, red = v >= 2 ? .6 : 0;
+  ROUTES.forEach((r, i) => { routePath(r, pan * .6); ctx.strokeStyle = i === 0 ? ca(PAL.red, lerp(.55, 1, Math.max(heat, red))) : 'rgba(60,50,35,.55)'; ctx.lineWidth = Math.max(2, Math.min(W, H) * (i === 0 ? .008 + heat * .01 : .004)); ctx.stroke(); });
+  shield(W * .3 - pan * .6, H * .72, Math.min(W, H) * .03, '122'); shield(W * .62 - pan * .6, H * .5, Math.min(W, H) * .03, '7');
+  const towns = [['Mile 0', .12, .7], ['Last Exit', .45, .55], ['Toll Plaza', .78, .36]]; towns.forEach(([n2, x, y]) => { ctx.fillStyle = PAL.ink; circle(x * W - pan * .6, y * H, Math.min(W, H) * .008); txt(n2, x * W - pan * .6 + Math.min(W, H) * .015, y * H - Math.min(W, H) * .012, Math.min(W, H) * .028, F.serifI, PAL.ink); });
+  if (v % 2 === 1) { const ph = ((e.b / 4) % 1), u = ph < .5 ? ph * 2 : 2 - ph * 2, p = routePoint(ROUTES[0], .15 + u * .7, pan * .6); ctx.save(); ctx.shadowColor = PAL.red; ctx.shadowBlur = 20 * DPR; ctx.fillStyle = PAL.red; circle(p[0], p[1], Math.min(W, H) * .014); ctx.restore(); }
+  if (v >= 2) { const stamps = ['ACCIDENT', 'WARNING', 'DETOUR', 'TOLL']; stamps.forEach((s2, i) => { const t0 = L.t0 + (i + .5) * e.clk.spb * 2, sa = e.t - t0; if (sa < 0) return; const k = snapK(sa); ctx.save(); ctx.translate(W * (.52 + (i % 2) * .22), H * (.22 + i * .17)); ctx.rotate((hash(i + L.idx) - .5) * .3); ctx.scale(k, k); ctx.strokeStyle = PAL.red; ctx.lineWidth = Math.max(2, H * .006); const px = H * .05, tw = mw(s2, F.cond) * px; ctx.strokeRect(-tw / 2 - px * .3, -px * .9, tw + px * .6, px * 1.3); txt(s2, 0, 0, px, F.cond, PAL.red, 'center'); ctx.restore(); if (sa < .08 && S.flash) { ctx.fillStyle = ca(PAL.red, .12); ctx.fillRect(0, 0, W, H); } }); }
+  ctx.restore();
+  const sf = SAFE(), ck = st.ck; let y = sf.y + H * .03;
+  ck.forEach((c, i) => {
+    const ca2 = e.t - c.t; if (ca2 < 0) return; const last = i === ck.length - 1 && v % 2 === 0 && /\bSLOW$/.test(c.text);
+    if (last) { const px = H * .065, lines = [c.text], tw = mw(c.text, F.cond) * px, x = W * (e.Z.P ? .1 : .56), yy = H * .62, s = snapK(ca2); ctx.save(); ctx.translate(x + tw / 2, yy); ctx.scale(s, s); ctx.fillStyle = PAL.ink; ctx.fillRect(-tw / 2 - px * .5, -px * 1.1, tw + px, px * 1.6); ctx.strokeStyle = PAL.paper; ctx.lineWidth = Math.max(1, px * .06); ctx.strokeRect(-tw / 2 - px * .38, -px * .98, tw + px * .76, px * 1.36); txt(lines[0], 0, px * .1, px, F.cond, PAL.paper, 'center'); ctx.restore(); return; }
+    const big = has(c, 'mama') || has(c, 'said'), px = H * (big ? .12 : .06);
+    y = bigType(sent(c.text), sf.x, y, W * (e.Z.P ? .88 : .5), px, big ? F.serif : F.serifI, i === st.ci ? PAL.ink : ca(PAL.ink, .55), ca2, { lh: 1.05 }) + H * .012;
+  });
+};
+// odometer that reads the time, rolling toward midnight
+SCN.odo = (e, L, st, v) => {
+  ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H); texFill('asphalt', 0, 0, W, H, .5);
+  const ck = st.ck, ti = ck.findIndex(c => has(c, 'time')), bi = ck.findIndex(c => has(c, 'before')), M = Math.min(W, H);
+  let digits = '23:58', prev = '23:57', rollK = clamp((e.t - L.t0) / .35);
+  if (ti >= 0 && e.t >= ck[ti].t) { digits = '23:59'; prev = '23:58'; rollK = clamp((e.t - ck[ti].t) / .35); }
+  let roll = null;
+  if (bi >= 0 && e.t >= ck[bi].t) { const ba = e.t - ck[bi].t; if (ba < .45) { digits = '00:00'; prev = '23:59'; rollK = clamp(ba / .3); } else { const sp = (ba - .45) * (v ? 30 : 18); digits = ['0', '0', ':', String(Math.floor(sp / 2) % 6), String(Math.floor(sp) % 10)].join(''); prev = digits; rollK = 1; roll = null; } }
+  const cx = W * (e.Z.P ? .5 : .56), cy = H * (e.Z.P ? .62 : .52), w = M * .8, h = M * .22;
+  odometer(cx, cy, w, h, [...digits], rollK, { prev: [...prev], roll, col: v ? PAL.red : PAL.paper });
+  txt('ODOMETER · TIME', cx - w / 2, cy - h * .95, Math.max(9 * DPR, M * .025), F.monoR, ca(PAL.paper, .6)); txt(`BALANCE ${tollValue(e.t)}`, cx + w / 2, cy - h * .95, Math.max(9 * DPR, M * .025), F.monoR, v ? PAL.red : ca(PAL.amber, .8), 'right');
+  ctx.strokeStyle = PAL.amber; ctx.lineWidth = Math.max(2, M * .004); ctx.beginPath(); ctx.moveTo(cx - w / 2, cy + h * .95); ctx.lineTo(cx - w / 2 + w * clamp((e.t - L.t0) / Math.max(1, L.tEnd - L.t0)), cy + h * .95); ctx.stroke();
+  const sf = SAFE(); ck.forEach((c, i) => { const a = e.t - c.t; if (a < 0) return; const up = i < (bi >= 0 ? bi : ck.length); bigType(c.text, sf.x, up ? sf.y + H * .03 + (i === 0 ? 0 : H * .07) : cy + h * 1.15, W * .88, H * (i === st.ci ? .075 : .05), F.disp, i === st.ci ? PAL.paper : ca(PAL.steel, .9), a); });
+};
+// SCENE 07 / 12 — toll plaza approach, LED board, barrier drops
+function tollPlaza(R, zg, o = {}) {
+  const isl = [-3.6, -1.2, 1.2, 3.6], topY = 3.4;
+  const c0 = R.P(-6.5, topY + .7, zg), c1 = R.P(6.5, topY, zg); if (!c0 || !c1) return null;
+  const zn = Math.max(.45, zg - 4);
+  for (const x of isl) { quad(R, [[x - .35, 0, zn], [x + .35, 0, zn], [x + .35, 0, zg + .6], [x - .35, 0, zg + .6]], '#22211e'); if (zg - 4 > .45) quad(R, [[x - .35, 0, zg - 4], [x + .35, 0, zg - 4], [x + .35, 0, zg - 3.55], [x - .35, 0, zg - 3.55]], PAL.amber); }
+  for (const x of isl) { const p0 = R.P(x, 0, zg + .9), p1 = R.P(x, topY, zg + .9); if (!p0 || !p1) continue; const pw = Math.max(2, p0[2] * .3); ctx.fillStyle = '#1b1a18'; ctx.fillRect(p0[0] - pw / 2, p1[1], pw, p0[1] - p1[1]); ctx.fillStyle = ca(PAL.steel, .5); ctx.fillRect(p0[0] - pw / 2, p1[1], Math.max(1, pw * .15), p0[1] - p1[1]); }
+  for (const x of isl) { const b0 = R.P(x - .42, 0, zg + .6), b1 = R.P(x + .42, 1.6, zg + .6); if (!b0 || !b1) continue; ctx.fillStyle = '#26241f'; ctx.fillRect(b0[0], b1[1], b1[0] - b0[0], b0[1] - b1[1]); ctx.fillStyle = ca(PAL.amber, .7); ctx.fillRect(b0[0] + (b1[0] - b0[0]) * .15, b1[1] + (b0[1] - b1[1]) * .15, (b1[0] - b0[0]) * .7, (b0[1] - b1[1]) * .3); ctx.strokeStyle = ca(PAL.steel, .6); ctx.lineWidth = 1; ctx.strokeRect(b0[0], b1[1], b1[0] - b0[0], b0[1] - b1[1]); }
+  ctx.fillStyle = '#141413'; ctx.fillRect(c0[0], c0[1], c1[0] - c0[0], c1[1] - c0[1]); ctx.strokeStyle = ca(PAL.steel, .8); ctx.lineWidth = Math.max(1, c0[2] * .03); ctx.strokeRect(c0[0], c0[1], c1[0] - c0[0], c1[1] - c0[1]);
+  txt('TOLL', c0[0] + (c1[0] - c0[0]) * .06, c1[1] - (c1[1] - c0[1]) * .28, (c1[1] - c0[1]) * .5, F.cond, PAL.paper); txt('EVERY ROAD HAS A PRICE', c1[0] - (c1[0] - c0[0]) * .04, c1[1] - (c1[1] - c0[1]) * .32, (c1[1] - c0[1]) * .22, F.monoR, ca(PAL.paper, .5), 'right');
+  const d0 = R.P(-2, topY + .55, zg - .05), d1 = R.P(2, topY + .1, zg - .05);
+  if (o.board != null && d0 && d1) ledBoard(d0[0], d0[1], d1[0] - d0[0], d1[1] - d0[1], o.board, o.boardCol || PAL.amber, o.blink);
+  if (o.arm != null) { const p = R.P(-1.2 + .38, 1, zg - .35); if (p) barrierArm(p[0], p[1], p[2] * 1.75, Math.max(3, p[2] * .12), o.arm); }
+  return { c0, c1 };
+}
+SCN.toll = (e, L, st, v) => {
+  const ck = st.ck, k = clamp((e.t - L.t0) / Math.max(1, L.tEnd - L.t0)), zg = v ? lerp(30, 4.5, eInOut(k)) : lerp(26, 6.5, eInOut(k));
+  const R = roadCam({ hz: .55, camH: 1.1, fov: .95 });
+  drawRoad(e, R, { travel: v ? e.t * 12 : e.t * 6, speed: v ? 12 : 6, lights: true, edge: ca(PAL.steel, .6) });
+  const gi = ck.findIndex(c => has(c, 'gonna')), pi = ck.findIndex(c => has(c, 'pay'));
+  let board = ' '; if (v === 0 && gi >= 0 && e.t >= ck[gi].t) board = ck[gi].text; if (v === 1) { const steps = ['$10', '$25', '$50', '$100', '$250']; const n = Math.max(0, Math.min(steps.length - 1, Math.floor((e.t - L.t0) / (e.clk.spb * 1.5)))); board = 'BALANCE DUE ' + steps[n]; }
+  const pa = pi >= 0 ? e.t - ck[pi].t : -1, armDown = pa >= 0 ? eOutBounce(clamp((pa - .15) / .4)) : 0;
+  tollPlaza(R, zg, { board, boardCol: v || pa >= 0 ? PAL.red : PAL.amber, arm: -Math.PI * .47 * (1 - armDown) });
+  if (ck[0] && e.t >= ck[0].t && !has(ck[0], 'gonna')) { const s2 = ck[0].text, f = F.disp, z = lerp(6.5, 3.4, clamp((e.t - ck[0].t) / 2)), a0 = R.P(-1.9, 0, z + 1.8), a1 = R.P(1.9, 0, z); if (a0 && a1) { const px = (a1[0] - a0[0]) / mw(s2, f) * 1; ctx.save(); ctx.translate((a0[0] + a1[0]) / 2, a1[1]); ctx.scale(1, (a1[1] - a0[1]) / (capOf(f) * px)); ctx.globalAlpha = clamp((e.t - ck[0].t) / .08) * (pa >= 0 ? clamp(1 - pa / .25) : 1); txt(s2, 0, 0, px, f, ca(PAL.paper, .85), 'center'); ctx.restore(); } }
+  const sf = SAFE(); if (pa >= 0) { bigType(ck[pi].text, sf.x, H * .6, W * .92, H * .2, F.disp, pa > .3 ? PAL.red : PAL.paper, pa, { shadow: 'rgba(0,0,0,.6)' }); }
+  if (v === 1 && ck[st.ci] && pa < 0 && (st.ci > 0 || has(ck[0], 'gonna'))) bigType(ck[st.ci].text, sf.x, sf.y + H * .02, W * .6, H * .08, F.disp, PAL.paper, st.ca);
+};
+// OH-OH: letters pass like road pillars, cut on every beat
+SCN.pillars = (e, L, st, v) => {
+  ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H);
+  const frame = ((e.bi % 3) + 3) % 3, R = roadCam({ hz: [.5, .62, .42][frame], camH: [1, .6, 1.8][frame], camX: [0, -1.5, 1.2][frame], fov: [.95, .75, 1.15][frame] });
+  drawRoad(e, R, { travel: e.t * 12, speed: 12, lights: false, hw: 2 });
+  const letters = []; st.ck.forEach(c => { for (const ch of c.text.replace(/[^A-Z]/g, '')) letters.push(ch); });
+  const bt = e.clk.spb, age = e.t - L.t0, n = Math.floor(age / bt);
+  for (let i = n; i >= Math.max(0, n - 4); i--) {
+    const a = age - i * bt, z = 20 - a * 15; if (z < 1.1) continue; const side = i % 2 ? 1 : -1, ch = letters[i % Math.max(1, letters.length)] || 'O';
+    const b = R.P(side * 3.4, 0, z), t2 = R.P(side * 3.4, 4.2, z); if (!b || !t2) continue;
+    const px = (b[1] - t2[1]) / capOf(F.disp); txt(ch, b[0] + px * .05 * side, b[1] + px * .02, px, F.disp, '#26241f', 'center'); txt(ch, b[0], b[1], px, F.disp, i % 4 === 3 ? PAL.red : PAL.paper, 'center');
+  }
+  if (S.flash && e.bf < .06) { ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(0, 0, W, H); }
+};
+// the word itself is the toll structure; the camera threads the letters
+SCN.tollword = (e, L, st, v) => {
+  const ck = st.ck, k = clamp((e.t - L.t0) / Math.max(1, L.tEnd - L.t0)), R = roadCam({ hz: .56, camH: 1, fov: .95, camX: v ? -.6 : .6 });
+  drawRoad(e, R, { travel: e.t * 7, speed: 7, lights: false });
+  const pi = ck.findIndex(c => has(c, 'pay')), pa = pi >= 0 ? e.t - ck[pi].t : -1, z = pa >= 0 ? lerp(9, .3, eInCubic(clamp(pa / 1.6))) : lerp(22, 9, eOutCubic(k * 1.3));
+  const word = 'TOLL', f = F.disp, capU = 5.2, em = capU / capOf(f), total = mw(word, f) * em * 1.25; let x = -total / 2;
+  for (const ch of word) { const cw = mw(ch, f) * em; for (let d = 5; d >= 0; d--) { const p = R.P(x + cw / 2, 0, z + d * .12); if (!p) continue; txt(ch, p[0], p[1], em * p[2], f, d ? (d > 2 ? '#1c1b19' : '#2c2a26') : (pa >= 0 ? PAL.red : PAL.paper), 'center'); } x += cw * 1.25; }
+  const g0 = R.P(-total / 2, capU + .9, z + .1), g1 = R.P(total / 2, capU + .3, z + .1);
+  if (g0 && g1 && ck.length) { const gi = ck.findIndex(c => has(c, 'gonna')), s2 = gi >= 0 && e.t >= ck[gi].t ? ck[gi].text : (ck[0] && e.t >= ck[0].t ? ck[0].text : ''); ledBoard(g0[0], g0[1], g1[0] - g0[0], g1[1] - g0[1], s2 || ' ', pa >= 0 ? PAL.red : PAL.amber); }
+  const sf = SAFE(); if (pa >= 0) bigType(ck[pi].text, sf.x, H - sf.y - H * .2, W * .9, H * .14, F.disp, PAL.paper, pa, { shadow: 'rgba(0,0,0,.7)' });
+};
+// SCENE 08 — a forest of contradictory signs; behind them, nothing; one sign that keeps changing
+const SIGN_WORDS = ['EXIT', 'STOP', 'GO', 'LEFT', 'RIGHT', 'WAIT', 'RETURN', ...SIGN_MSG];
+function arrowGlyph(x, y, s, dir, col) { ctx.save(); ctx.translate(x, y); ctx.rotate(dir); ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(-s * .5, -s * .12); ctx.lineTo(s * .15, -s * .12); ctx.lineTo(s * .15, -s * .35); ctx.lineTo(s * .55, 0); ctx.lineTo(s * .15, s * .35); ctx.lineTo(s * .15, s * .12); ctx.lineTo(-s * .5, s * .12); ctx.closePath(); ctx.fill(); ctx.restore(); }
+SCN.signs = (e, L, st, v) => {
+  const ck = st.ck, red = clamp((e.t - 60) / 90), sf = SAFE();
+  if (v <= 1) {
+    const behind = v === 1, R = roadCam({ hz: .5, camH: 1.4, fov: .9, camX: behind ? Math.sin(e.t * .4) * .8 : 0 });
+    drawRoad(e, R, { travel: e.t * 8, speed: 8, lights: false, hw: 1.6 });
+    const sp = behind ? 4 : 9, cycle = 34;
+    for (let i = 26; i >= 0; i--) {
+      const zz = ((hash(i * 3) * cycle - e.t * sp) % cycle + cycle) % cycle + .7, hx = hash(i * 7) - .5, x = Math.sign(hx) * (2.1 + Math.abs(hx) * 11), y = 1.3 + hash(i * 11) * 2.5, wU = .9 + hash(i) * 1.4, hU = .55 + hash(i * 5) * .35;
+      if (zz < (behind ? 2.6 : 1.3)) continue; const a = R.P(x - wU / 2, y + hU / 2, zz), b = R.P(x + wU / 2, y - hU / 2, zz), base = R.P(x, 0, zz); if (!a || !b || !base) continue;
+      ctx.strokeStyle = ca(PAL.steel, .8); ctx.lineWidth = Math.max(1, a[2] * .05); ctx.beginPath(); ctx.moveTo((a[0] + b[0]) / 2, b[1]); ctx.lineTo(base[0], base[1]); ctx.stroke();
+      if (behind) { ctx.fillStyle = '#3a3935'; ctx.fillRect(a[0], a[1], b[0] - a[0], b[1] - a[1]); ctx.fillStyle = '#23221f'; for (const bx of [.2, .8]) circle(a[0] + (b[0] - a[0]) * bx, (a[1] + b[1]) / 2, Math.max(1, a[2] * .03)); continue; }
+      const odd = hash(i * 13) < red * .6, bg = odd ? PAL.red : i % 3 === 0 ? PAL.paper : '#151514', fg = bg === PAL.paper ? PAL.ink : PAL.paper;
+      ctx.fillStyle = bg; ctx.fillRect(a[0], a[1], b[0] - a[0], b[1] - a[1]);
+      const word = SIGN_WORDS[i % SIGN_WORDS.length], px = Math.min((b[1] - a[1]) * .42, (b[0] - a[0]) * .62 / mw(word, F.cond));
+      ctx.save(); if (odd && hash(i) > .5) { ctx.translate((a[0] + b[0]) / 2, 0); ctx.scale(-1, 1); ctx.translate(-(a[0] + b[0]) / 2, 0); } txt(word, a[0] + (b[0] - a[0]) * .08, a[1] + (b[1] - a[1]) * .48, px, F.cond, fg); ctx.restore();
+      arrowGlyph(b[0] - (b[0] - a[0]) * .16, a[1] + (b[1] - a[1]) * .7, (b[1] - a[1]) * .4, hash(i * 17) * 6.283 + e.t * (odd ? 2 : 0), fg);
+    }
+    ck.forEach((c, i) => { const a = e.t - c.t; if (a < 0) return; const hero = !behind && i === ck.length - 1 && has(c, 'signs');
+      if (hero) { const px = H * .09, tw = mw(c.text, F.cond) * px, x = W - sf.x - tw - px, y = H * .56, s = snapK(a); ctx.save(); ctx.translate(x + tw / 2, y); ctx.scale(s, s); ctx.fillStyle = PAL.paper; ctx.fillRect(-tw / 2 - px * .5, -px * 1.05, tw + px, px * 1.55); ctx.strokeStyle = PAL.ink; ctx.lineWidth = Math.max(2, px * .06); ctx.strokeRect(-tw / 2 - px * .38, -px * .93, tw + px * .76, px * 1.31); txt(c.text, 0, px * .12, px, F.cond, PAL.ink, 'center'); ctx.restore(); return; }
+      bigType(c.text, sf.x, sf.y + H * .03 + i * H * .12, W * .6, H * (i === st.ci ? .1 : .07), F.disp, i === st.ci ? PAL.paper : ca(PAL.steel, .9), a); });
+    return;
+  }
+  // v2 / v3: one sign, its content flips with every phrase; the last one points forward
+  const fin = v === 3 && st.ci === ck.length - 1 && ck.length > 1, fa = fin ? e.t - ck[st.ci].t : 0, push = fin ? eInCubic(clamp((fa - .3) / 1.2)) : 0;
+  const R = roadCam({ hz: .52, camH: 1.2, fov: .95 * (1 - push * .3) });
+  drawRoad(e, R, { travel: e.t * (6 + push * 40), speed: 6 + push * 40, lights: true, hw: 2 });
+  const c = ck[Math.max(0, st.ci)], s2 = st.ci >= 0 ? c.text : ' ', flip = st.ci >= 0 ? clamp(st.ca / .22) : 1, z = lerp(7, 1.2, push);
+  const f = F.cond, capU = .5, em = capU / capOf(f), tw = Math.max(3.2, mw(s2, f) * em + 1), a = R.P(-tw / 2, 3.2, z), b = R.P(tw / 2, 1.9, z), base = R.P(0, 0, z);
+  if (a && b && base) {
+    ctx.strokeStyle = ca(PAL.steel, .9); ctx.lineWidth = Math.max(2, a[2] * .06); ctx.beginPath(); ctx.moveTo((a[0] + b[0]) / 2, b[1]); ctx.lineTo(base[0], base[1]); ctx.stroke();
+    const my = (a[1] + b[1]) / 2, sy = Math.abs(Math.cos(flip * Math.PI)) * (flip < 1 ? 1 : 1); ctx.save(); ctx.translate(0, my); ctx.scale(1, flip < .5 ? Math.cos(flip * Math.PI) : Math.abs(Math.cos(flip * Math.PI))); ctx.translate(0, -my);
+    ctx.fillStyle = fin ? PAL.paper : '#151514'; ctx.fillRect(a[0], a[1], b[0] - a[0], b[1] - a[1]); ctx.strokeStyle = fin ? PAL.ink : PAL.paper; ctx.lineWidth = Math.max(2, a[2] * .03); ctx.strokeRect(a[0] + a[2] * .08, a[1] + a[2] * .08, b[0] - a[0] - a[2] * .16, b[1] - a[1] - a[2] * .16);
+    if (flip >= .5) { txt(s2, (a[0] + b[0]) / 2 - (fin ? a[2] * .3 : 0), my + capU * a[2] / 2, em * a[2], f, fin ? PAL.ink : PAL.paper, 'center'); if (fin) arrowGlyph(b[0] - a[2] * .45, my, a[2] * .6, -Math.PI / 2, PAL.red); }
+    ctx.restore(); void sy;
+  }
+};
+// SCENE 12 — receipt printer: PAY PAY PAY, total = your time
+SCN.receipt = (e, L, st, v) => {
+  ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H); texFill('asphalt', 0, 0, W, H, .5);
+  const ck = st.ck, M = Math.min(W, H), pw = e.Z.P ? W * .8 : Math.min(W * .36, H * .62), px0 = e.Z.P ? W * .1 : W * .55, slotY = H * .12, m = pw * .05;
+  const rows = [['TOLL RECEIPT', 'hdr'], [`LANE 07 · ${SONG.bpm} BPM`, 'sub'], ['', 'perf']];
+  ck.forEach((c, i) => { if (e.t < c.t) return; if (has(c, 'pay')) { const n = 2 + Math.floor(clamp((e.t - c.t) / 1.2) * 4) + (v ? 2 : 0); for (let j = 0; j < n; j++) rows.push(['PAY', 'pay', c.t + j * .1]); } else rows.push([c.text, 'line', c.t]); });
+  const last = ck[ck.length - 1], done = last && has(last, 'toll') && e.t >= last.t + .4;
+  if (done) { rows.push(['', 'perf']); rows.push(['TOTAL', 'tot']); rows.push([v ? 'PAY NOW' : 'YOUR TIME', 'your']); if (v) rows.push(['', 'bar']); }
+  const rh = { hdr: m * 2.2, sub: m * 1.4, perf: m * 1.2, pay: m * 3.4, line: m * 2, tot: m * 2, your: m * 3.2, bar: m * 5 };
+  const total = rows.reduce((a, r) => a + rh[r[1]], 0) + m * 2, scroll = Math.max(0, total - (H - slotY - H * .05)), len = total;
+  ctx.fillStyle = '#1d1c1a'; rr(px0 - pw * .08, slotY - H * .05, pw * 1.16, H * .07, H * .012); ctx.fill(); ctx.fillStyle = '#050505'; ctx.fillRect(px0 - pw * .02, slotY - H * .006, pw * 1.04, H * .012);
+  ctx.save(); ctx.beginPath(); ctx.rect(0, slotY, W, H); ctx.clip(); ctx.translate(0, slotY - scroll);
+  ctx.fillStyle = pat('paper'); ctx.fillRect(px0, -H, pw, len + H);
+  let y = m; for (const [s2, kind] of rows) {
+    const h = rh[kind];
+    if (kind === 'perf') { ctx.strokeStyle = PAL.amber; ctx.lineWidth = Math.max(1, m * .12); ctx.setLineDash([m * .5, m * .4]); ctx.beginPath(); ctx.moveTo(px0 + m, y + h / 2); ctx.lineTo(px0 + pw - m, y + h / 2); ctx.stroke(); ctx.setLineDash([]); }
+    else if (kind === 'bar') { let x = px0 + m, i = 0; while (x < px0 + pw - m) { const bw = (1 + Math.floor(hash(i * 7) * 3)) * Math.max(1, m * .14); if (i % 2 === 0) { ctx.fillStyle = PAL.ink; ctx.fillRect(x, y, bw, h * .8); } x += bw; i++; } }
+    else { const px = { hdr: m * 1.3, sub: m * .8, pay: m * 3, line: m * 1.05, tot: m * 1.3, your: m * 2.4 }[kind], f = kind === 'pay' || kind === 'your' ? F.disp : kind === 'line' ? F.monoB : F.mono; const col = kind === 'pay' || kind === 'your' ? PAL.red : PAL.ink; const fitPx = Math.min(px, (pw - m * 2) / Math.max(.1, mw(s2, f))); txt(s2, kind === 'hdr' || kind === 'your' ? px0 + pw / 2 : px0 + m, y + h * .72, fitPx, f, col, kind === 'hdr' || kind === 'your' ? 'center' : 'left'); if (kind === 'tot') txt(tollValue(e.t), px0 + pw - m, y + h * .72, m * 1.1, F.mono, PAL.ink, 'right'); }
+    y += h;
+  }
+  ctx.restore();
+  const sf = SAFE(); if (!e.Z.P && st.ci >= 0) bigType(ck[st.ci].text, sf.x, sf.y + H * .03, W * .42, H * .1, F.disp, PAL.paper, st.ca);
+};
+// SCENE 13 — perfect straight road from above; crossing the line turns the world 90°, then we fall
+SCN.line = (e, L, st, v) => {
+  ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H);
+  const ck = st.ck, li = v === 2 ? ck.findIndex(c => has(c, 'line')) : -1, la2 = li >= 0 ? e.t - ck[li].t : -1;
+  const turned = v === 3 || la2 >= .05, rotK = v === 3 ? 1 : la2 >= 0 ? eOutBack(clamp((la2 - .05) / .35), 1.4) : 0, M = Math.max(W, H);
+  ctx.save(); ctx.translate(W / 2, v <= 1 ? H * .64 : H / 2); ctx.rotate(rotK * Math.PI / 2);
+  const rw = Math.min(W, H) * (v <= 1 ? .4 : .32), heat = v === 1 ? clamp((e.t - L.t0) / Math.max(1, L.tEnd - L.t0)) : v >= 2 ? .6 : 0;
+  ctx.fillStyle = PAL.road; ctx.fillRect(-M, -rw / 2, M * 2, rw); ctx.save(); ctx.translate(-M, -rw / 2); texFill('asphalt', 0, 0, M * 2, rw, .9); ctx.restore();
+  ctx.fillStyle = ca(PAL.steel, .8); ctx.fillRect(-M, -rw / 2, M * 2, Math.max(2, rw * .012)); ctx.fillRect(-M, rw / 2 - Math.max(2, rw * .012), M * 2, Math.max(2, rw * .012));
+  const lc = heat > 0 ? mixc(PAL.amber, PAL.red, heat) : PAL.amber; ctx.save(); if (heat > .3) { ctx.shadowColor = PAL.red; ctx.shadowBlur = rw * .08 * heat * (1 + .3 * Math.sin(e.t * 20)); } ctx.fillStyle = lc; ctx.fillRect(-M, -rw * .025, M * 2, rw * .018); ctx.fillRect(-M, rw * .007, M * 2, rw * .018); ctx.restore();
+  let carX = lerp(-W * .45, -W * .05, clamp((e.t - L.t0) / Math.max(1, L.tEnd - L.t0))), carY = rw * .22;
+  if (v === 2 && li >= 0) { const cross = clamp((e.t - (ck[li].t - .35)) / .4); carY = lerp(rw * .22, -rw * .22, eInOut(cross)); }
+  if (v === 3) carY = -rw * .22;
+  let fallY = 0; if (turned) { const fa = v === 3 ? e.t - L.t0 + 1 : la2; fallY = fa * fa * H * .35; }
+  const tile = M * 2; ctx.save(); ctx.translate(-((fallY) % (rw * .6)), 0); for (let x = -M; x < M; x += rw * .6) { ctx.fillStyle = 'rgba(255,255,255,.035)'; ctx.fillRect(x, -rw / 2, rw * .02, rw); } ctx.restore(); void tile;
+  const g = ctx.createRadialGradient(carX, carY, 0, carX, carY, rw * .25); g.addColorStop(0, ca(PAL.amber, .9)); g.addColorStop(1, ca(PAL.amber, 0)); ctx.fillStyle = g; ctx.fillRect(carX - rw * .25, carY - rw * .25, rw * .5, rw * .5);
+  ctx.fillStyle = PAL.paper; circle(carX + rw * .03, carY - rw * .035, rw * .012); circle(carX + rw * .03, carY + rw * .035, rw * .012);
+  if (turned) { ctx.strokeStyle = ca(PAL.paper, .3); ctx.lineWidth = 1; for (let i = 0; i < 18; i++) { const yy = (hash(i) - .5) * rw * 3, len = rw * (.4 + hash(i * 3)); ctx.beginPath(); ctx.moveTo(carX - len - (fallY * (1 + hash(i))) % (rw * 2), yy); ctx.lineTo(carX - (fallY * (1 + hash(i))) % (rw * 2), yy); ctx.stroke(); } }
+  ctx.restore();
+  const sf = SAFE();
+  ck.forEach((c, i) => {
+    const a = e.t - c.t; if (a < 0) return;
+    if (v <= 1) { const serif = v === 0, px = H * (i === st.ci ? .075 : .045); bigType(serif ? sent(c.text) : c.text, sf.x, sf.y + H * .03 + i * H * .09, W * .8, px, serif ? F.serifI : F.monoB, i === st.ci ? (heat > .3 ? PAL.red : PAL.paper) : ca(PAL.steel, .9), a); return; }
+    let y = sf.y + H * .05 + i * H * .12;
+    if (turned) { if (i > st.ci) return; const a2 = i < st.ci ? e.t - ck[i + 1].t : 0; y = H * .4 - (st.ci - i) * H * .13 - (a2 * a2 * H * 1.4 + a2 * H * .5); if (y < -H * .3) return; }
+    bigType(c.text, sf.x, y, W * .88, H * (i === st.ci ? .12 : .07), F.disp, i === st.ci ? PAL.paper : ca(PAL.steel, .9), a);
+  });
+};
+// SCENE 14 — everything from the warnings comes back at once, cut on half beats
+SCN.collage = (e, L, st, v) => {
+  ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H);
+  const hb = Math.floor(e.b * 2), M = Math.min(W, H), red = .6 + .4 * clamp((e.t - 140) / 20);
+  const lay = i => ({ x: W * (.15 + hash(hb * 7 + i) * .7), y: H * (.2 + hash(hb * 11 + i) * .6), r: (hash(hb * 3 + i) - .5) * .3, s: .7 + hash(hb * 5 + i) * .6 });
+  const items = [
+    (p) => { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r); ctx.scale(p.s, p.s); const px = M * .08, s2 = SIGN_MSG[hb % SIGN_MSG.length], tw = mw(s2, F.cond) * px; ctx.fillStyle = PAL.paper; ctx.fillRect(-tw / 2 - px * .5, -px, tw + px, px * 1.5); txt(s2, 0, px * .18, px, F.cond, PAL.ink, 'center'); ctx.restore(); },
+    (p) => { ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.r * .5); ctx.scale(p.s, p.s); ledBoard(-M * .35, -M * .06, M * .7, M * .12, hb % 2 ? 'TOLL DUE' : tollValue(e.t), PAL.red); ctx.restore(); },
+    (p) => { ctx.save(); ctx.beginPath(); ctx.rect(p.x - M * .25, p.y - M * .18, M * .5, M * .36); ctx.clip(); mapPaper(e, { pan: e.t * W * .05 }); routePath(ROUTES[hb % 3], 0); ctx.strokeStyle = PAL.red; ctx.lineWidth = M * .01; ctx.stroke(); ctx.restore(); },
+    (p) => { odometer(p.x, p.y, M * .42 * p.s, M * .11 * p.s, [...(v ? String(Math.floor(e.t * 37) % 10000).padStart(4, '0') : '00:00')], 1, { col: PAL.red }); },
+    (p) => { warnings(p.x - M * .35, p.y, M * .04, [1, 1, 1, 1]); },
+  ];
+  const n = v ? 5 : 4; for (let i = 0; i < n; i++) items[(i + hb) % items.length](lay(i));
+  ctx.fillStyle = ca(PAL.red, .07 * red); ctx.fillRect(0, 0, W, H);
+  const shade = ctx.createLinearGradient(0, H * .5, 0, H); shade.addColorStop(0, 'rgba(9,9,9,0)'); shade.addColorStop(.45, 'rgba(9,9,9,.85)'); shade.addColorStop(1, 'rgba(9,9,9,.92)'); ctx.fillStyle = shade; ctx.fillRect(0, H * .5, W, H * .5);
+  const sf = SAFE(); if (st.ci >= 0) bigType(st.ck[st.ci].text, sf.x, H - sf.y - H * .04, W * .9, H * (e.Z.P ? .08 : .14), F.disp, PAL.paper, st.ca, { shadow: 'rgba(0,0,0,.8)', bottom: true });
+};
+// burning road: the lines turn red and crumble like ash
+SCN.ash = (e, L, st, v) => {
+  ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H);
+  const k = clamp((e.t - L.t0) / Math.max(1, L.tEnd - L.t0)), front = k * 1.4;
+  ROUTES.concat([[[-.1, .6], [.3, .62], [.55, .4], [1.1, .45]], [[.5, 1.1], [.52, .7], [.7, .4], [.72, -.1]]]).forEach((r, ri) => {
+    for (let i = 0; i < r.length - 1; i++) for (let j = 0; j < 10; j++) {
+      const u0 = (i + j / 10) / (r.length - 1), p0 = routePoint(r, u0, 0), p1 = routePoint(r, u0 + .1 / (r.length - 1), 0), heat = clamp((front - u0) * 3), crumble = clamp((front - u0 - .35) * 2.5);
+      const id = ri * 100 + i * 10 + j, fx = (hash(id) - .5) * crumble * W * .05, fy = crumble * crumble * H * (.3 + hash(id * 3) * .4);
+      ctx.strokeStyle = heat > 0 ? mixc('#8a867e', PAL.red, heat) : ca(PAL.steel, .8); ctx.globalAlpha = 1 - crumble; ctx.lineWidth = Math.max(1.5, Math.min(W, H) * .006); ctx.beginPath(); ctx.moveTo(p0[0] + fx, p0[1] + fy); ctx.lineTo(p1[0] + fx, p1[1] + fy); ctx.stroke();
+      if (crumble > 0 && hash(id * 5) > .6) { ctx.fillStyle = ca(PAL.steel, .6); ctx.fillRect(p0[0] + fx * 1.4, p0[1] + fy * 1.3, 2 * DPR, 2 * DPR); }
+    }
+  });
+  ctx.globalAlpha = 1;
+  const sf = SAFE(); st.ck.forEach((c, i) => { const a = e.t - c.t; if (a < 0) return; bigType(c.text, sf.x, sf.y + H * .03 + i * H * .13, W * .7, H * (i === st.ci ? .11 : .07), F.disp, i === st.ci ? PAL.red : ca(PAL.paper, .5), a); });
+};
+// SCENE 15 — final toll: TOLL DUE, the word fills the frame, a coin, PAID, next toll, the road again
+SCN.final = (e, L, st, v) => {
+  const ck = st.ck, M = Math.min(W, H), tw = L.words.find(w => w.lc === 'toll') || L.words[L.words.length - 1], tt = tw ? tw.t : L.tEnd, a = e.t - tt;
+  const coinT = tt + 1.5, clink = coinT + .8, passT = clink + 2.6, roadT = passT + 1.4, fadeT = roadT + 4;
+  if (e.t >= roadT) { const R = roadCam({ hz: .54, camH: 1.05 }); drawRoad(e, R, { travel: e.t * 5.5, speed: 5.5 }); const fa = clamp((e.t - fadeT) / 2.2); if (e.t > roadT && e.t < roadT + 3) { const z = lerp(30, 8, clamp((e.t - roadT) / 3)); gantrySign(R, z, ['NEXT TOLL 2.4 MI'], { dark: true }); } ctx.fillStyle = `rgba(0,0,0,${fa})`; ctx.fillRect(0, 0, W, H); if (fa > .6) { ctx.globalAlpha = clamp((fa - .6) / .4); txt('EVERY ROAD HAS A PRICE', W / 2, H / 2, Math.max(11 * DPR, H * .024), F.monoR, PAL.paper, 'center'); ctx.globalAlpha = 1; } return; }
+  const pass = clamp((e.t - passT) / 1.4), zg = lerp(7.5, .4, eInCubic(pass));
+  const R = roadCam({ hz: .5, camH: 1.1, fov: .9 });
+  drawRoad(e, R, { travel: 0, speed: 0, lights: false, edge: ca(PAL.red, .6), lineCol: PAL.red });
+  let board = 'TOLL DUE', col = PAL.red, blink = false;
+  if (e.t >= clink) { const ca2 = e.t - clink; board = ca2 < 1.2 ? 'PAID' : 'NEXT TOLL 2.4 MI'; col = ca2 < 1.2 ? PAL.amber : PAL.paper; blink = ca2 > .7 && ca2 < 1.2 && Math.floor(ca2 * 10) % 2 === 0; }
+  const armUp = e.t >= clink + 2 ? eInOut(clamp((e.t - clink - 2) / .5)) : 0, armDown = e.t >= L.t0 ? eOutBounce(clamp((e.t - L.t0 - .2) / .45)) : 0;
+  const pl = tollPlaza(R, zg, { board, boardCol: col, blink, arm: -Math.PI * .47 * (1 - armDown + armUp) });
+  // coin into the slot
+  if (e.t >= coinT - .9 && e.t < clink + .5 && pl) { const slot = R.P(-1.2, 1.2, zg + .4), k = clamp((e.t - (coinT - .9)) / 1.7); if (slot) { coin(slot[0], lerp(-M * .1, slot[1], eInCubic(k)), M * .045, e.t * 11); ctx.fillStyle = '#050505'; ctx.fillRect(slot[0] - M * .03, slot[1] - M * .004, M * .06, M * .008); } }
+  if (e.t >= clink && e.t < clink + .08 && S.flash) { ctx.fillStyle = ca(PAL.amber, .35); ctx.fillRect(0, 0, W, H); }
+  const sf = SAFE();
+  if (a < 0 && st.ci >= 0) { const c = ck[st.ci], out = {}; bigType(c.text, sf.x, H - sf.y, W * .75, H * .12, F.disp, has(c, 'pay') ? PAL.red : PAL.paper, e.t - c.t, { shadow: 'rgba(0,0,0,.7)', bottom: true, out }); if (st.ci > 0) bigType(ck[st.ci - 1].text, sf.x, out.top - H * .015, W * .75, H * .06, F.disp, ca(PAL.paper, .6), 1, { shadow: 'rgba(0,0,0,.7)', bottom: true, noSnap: true }); }
+  else if (a < 1.4) { const px = fit('TOLL', F.disp, W * .96, H * .8), s = snapK(a); ctx.save(); ctx.translate(W / 2, H / 2 + capOf(F.disp) * px / 2); ctx.scale(s, s); txt('TOLL', 0, 0, px, F.disp, PAL.red, 'center'); ctx.restore(); }
+};
+
+/* ============================ v4: camera, transitions, texture ============================ */
+function cam(e, L, st, role, tk) {
+  const kickAge = ((e.b % 2) + 2) % 2 * e.clk.spb, big = e.kind === 'chorus' || e.kind === 'final' || e.kind === 'post';
+  const kb = Math.floor(e.b / 2), punch = Math.exp(-kickAge * 14) * (big ? .035 : .018) * (S.flash ? 1 : .4);
+  const snapX = big ? (hash(kb * 7 + L.idx) - .5) * W * .012 : 0, snapY = big ? (hash(kb * 13 + L.idx) - .5) * H * .01 : 0;
+  const drift = 1 + .03 * eInOut(clamp((e.t - L.t0) / Math.max(1, L.tEnd - L.t0)));
+  let z = (1 + punch) * drift, x = snapX, y = snapY, r = 0;
+  if (e.kind === 'bridge') r = Math.sin(e.t * .4) * .004;
+  if (role === 'new') { const q = eOutCubic(tk); if (L.trans === 'whip') x += (1 - q) * W * 1.1; else if (L.trans === 'rise') y -= (1 - q) * H; else if (L.trans === 'drop') y += (1 - q) * H * .9; else if (L.trans === 'hard') z *= 1 + (1 - clamp(tk / .35)) * .05; }
+  const weave = S.flash ? (hash(Math.floor(e.t * 24)) - .5) * DPR * .8 : 0;
+  ctx.translate(W / 2 + x, H / 2 + y + weave); ctx.rotate(r); ctx.scale(z, z); ctx.translate(-W / 2, -H / 2);
+}
+function drawShot(e, L, role, tk) {
+  const cs = chunkState(L, e.t), st = { ...cs, k: clamp((e.t - L.t0) / Math.max(.3, L.tEnd - L.t0)) };
+  ctx.save(); ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H); cam(e, L, st, role, tk); (SCN[L.scene] || SCN.road)(e, L, st, L.var || 0); ctx.restore();
+}
+const ANCHOR = { casino: [.5, .5, .2], well: [.5, .5, .2], odo: [.56, .52, .3], gauge: [.58, .56, .36] };
+const tbuf = document.createElement('canvas');
+function composite(e, L, k) {
+  const type = L.trans, q = eInOut(k); ctx.save();
+  switch (type) {
+    case 'match': { const an = ANCHOR[L.scene] || [.5, .5, .2], cx = an[0] * W, cy = an[1] * H, r0 = an[2] * Math.min(W, H), R = lerp(r0, Math.hypot(W, H), eInCubic(k)); ctx.beginPath(); ctx.rect(0, 0, W, H); ctx.arc(cx, cy, R, 0, 6.283, true); ctx.clip('evenodd'); ctx.drawImage(tbuf, 0, 0); ctx.restore(); ctx.save(); ctx.strokeStyle = ca(PAL.paper, (1 - k) * .8); ctx.lineWidth = Math.max(1, DPR * 1.5); ctx.beginPath(); ctx.arc(cx, cy, R, 0, 6.283); ctx.stroke(); break; }
+    case 'whip': { const dx = -eInCubic(k) * W * 1.2; for (let g = 3; g >= 0; g--) { ctx.globalAlpha = g ? .16 : 1 - k * .3; ctx.drawImage(tbuf, dx + g * W * .04 * Math.sin(k * Math.PI), 0); } break; }
+    case 'dial': { const an = ANCHOR[L.scene] || [.5, .5, .3], cx = lerp(W / 2, an[0] * W, q), cy = lerp(H * .5, an[1] * H, q), Rr = lerp(Math.hypot(W, H) * .6, an[2] * Math.min(W, H) * 1.08, q), s = lerp(1, .55, q);
+      ctx.beginPath(); ctx.arc(cx, cy, Rr, 0, 6.283); ctx.clip(); ctx.globalAlpha = 1 - clamp((k - .55) / .45); ctx.save(); ctx.translate(cx, cy); ctx.rotate(-eInCubic(k) * 2.4); ctx.scale(s, s); ctx.translate(-W / 2, -H * .5); ctx.drawImage(tbuf, 0, 0); ctx.restore();
+      ctx.globalAlpha = 1; ctx.strokeStyle = PAL.amber; ctx.lineWidth = Math.max(2, DPR * 2); ctx.beginPath(); ctx.arc(cx, cy, Rr - 1, 0, 6.283); ctx.stroke(); break; }
+    case 'rise': ctx.drawImage(tbuf, 0, eOutCubic(k) * H); break;
+    case 'drop': ctx.drawImage(tbuf, 0, -eInCubic(k) * H); break;
+    case 'pass': { const s = 1 + eInCubic(k) * 3; ctx.globalAlpha = 1 - eInCubic(k); ctx.translate(W / 2, H * .3); ctx.scale(s, s); ctx.translate(-W / 2, -H * .3 - eInCubic(k) * H * .2); ctx.drawImage(tbuf, 0, 0); break; }
+    case 'shatter': { const cols = 7, rows = 5, cw = W / cols, ch = H / rows; for (let i = 0; i < cols; i++) for (let j = 0; j < rows; j++) for (const tri of [0, 1]) { const id = i * 31 + j * 7 + tri, d = hash(id) * .25, p = clamp((k - d) / .75); if (p >= 1) continue; const x0 = i * cw, y0 = j * ch, cx = x0 + cw / 2, cy = y0 + ch / 2, vx = (cx - W / 2) / W * 2, vy = (cy - H / 2) / H * 2;
+        ctx.save(); ctx.translate(cx + vx * p * W * .4, cy + vy * p * H * .4 + p * p * H * .6); ctx.rotate(p * (hash(id * 3) - .5) * 4); ctx.translate(-cx, -cy); ctx.beginPath(); if (tri) { ctx.moveTo(x0, y0); ctx.lineTo(x0 + cw, y0); ctx.lineTo(x0, y0 + ch); } else { ctx.moveTo(x0 + cw, y0); ctx.lineTo(x0 + cw, y0 + ch); ctx.lineTo(x0, y0 + ch); } ctx.closePath(); ctx.clip(); ctx.globalAlpha = 1 - p * .6; ctx.drawImage(tbuf, 0, 0); ctx.strokeStyle = ca(PAL.paper, .6); ctx.lineWidth = 1; ctx.stroke(); ctx.restore(); } break; }
+    case 'barcode': { const n = 40; for (let i = 0; i < n; i++) { const x0 = i / n * W, w = W / n, keep = hash(i * 7) > q; if (!keep) continue; const sx = (x0 + w / 2 - W / 2) * (1 + q * 2) + W / 2; ctx.drawImage(tbuf, x0, 0, w, H, sx - w * (1 - q * .7) / 2, 0, w * (1 - q * .7), H); } break; }
+    default: break;
+  }
+  ctx.restore();
+}
+function texture(e, L) {
+  ctx.save(); const fr = Math.floor(e.t * 24); ctx.globalAlpha = .45; ctx.translate(-(hash(fr) * 192) | 0, -(hash(fr + 1) * 192) | 0); ctx.fillStyle = grainPat; ctx.fillRect(0, 0, W + 192, H + 192); ctx.restore();
+  ctx.fillStyle = vignette; ctx.fillRect(0, 0, W, H);
+  if (S.hud) { const sf = SAFE(), m = Math.max(9 * DPR, H * .014); ctx.strokeStyle = ca(PAL.paper, .35); ctx.lineWidth = Math.max(1, DPR); const cl = m * 1.4; ctx.beginPath(); for (const [x, y, sx, sy] of [[sf.x * .5, sf.y * .5, 1, 1], [W - sf.x * .5, sf.y * .5, -1, 1], [sf.x * .5, H - sf.y * .5, 1, -1], [W - sf.x * .5, H - sf.y * .5, -1, -1]]) { ctx.moveTo(x, y + sy * cl); ctx.lineTo(x, y); ctx.lineTo(x + sx * cl, y); } ctx.stroke();
+    txt(`${fmt(e.t)}  ${e.secName}${L ? '  SC.' + String((L.idx || 0) + 1).padStart(2, '0') : ''}`, W - sf.x * .5 - m * .5, sf.y * .5 + m * 1.6, m, F.monoR, ca(PAL.paper, .45), 'right'); }
+}
+
+/* ============================ v4: frame ============================ */
+function render(t) {
+  const song = S.mode === 'song', clk = song ? SONG_CLK : DEMO_CLK, lines = song ? S.lines : S.demoLines, evs = song ? S.events : S.demoEvents;
+  const b = (t - clk.beat0) / clk.spb, bi = Math.floor(b), bf = b - bi;
+  let L = lineAt(lines, t); if (!L && lines.length) L = lines[0];
+  let kind, secName; if (song) { const s = sectionAt(t); kind = s.kind; secName = s.name; } else { kind = L ? L.kind : 'verse'; secName = 'DEMO'; }
+  const e = { t, W, H, b, bi, bf, bar: Math.floor(bi / 4), bib: ((bi % 4) + 4) % 4, pulse: Math.exp(-bf * 5), kind, secName, clk, evs, song, Z: { P: H > W * 1.05 } };
+  ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.globalAlpha = 1; ctx.globalCompositeOperation = 'source-over';
+  if (!L) { ctx.fillStyle = PAL.asphalt; ctx.fillRect(0, 0, W, H); texture(e, null); return; }
+  const trD = L.trans === 'hard' ? 0 : L.trans === 'shatter' ? .7 : L.trans === 'dial' ? .6 : .45, tk = trD ? (t - L.t0) / trD : 1, prev = L.idx > 0 ? lines[L.idx - 1] : null;
+  const inTrans = prev && trD && tk >= 0 && tk < 1;
+  drawShot(e, L, inTrans || (L.trans === 'hard' && t - L.t0 < .35) ? 'new' : null, clamp(trD ? tk : (t - L.t0)));
+  if (inTrans) {
+    if (tbuf.width !== W || tbuf.height !== H) { tbuf.width = W; tbuf.height = H; }
+    const main = ctx; ctx = tbuf.getContext('2d'); ctx.setTransform(1, 0, 0, 1, 0, 0);
+    try { drawShot(e, prev, 'old', 1); } finally { ctx = main; }
+    composite(e, L, clamp(tk));
+  }
+  texture(e, L);
+}
+
+/* ============================ UI ============================ */
+const $ = id => document.getElementById(id);
+const booth = $('booth'), bar = $('bar'), go = $('go'), tl = $('tl'), toast = $('toast');
+let hideTimer = 0, toastTimer = 0;
+function say(msg) { toast.textContent = msg; toast.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toast.hidden = true; }, 2600); }
+function wake() { bar.classList.remove('hide'); clearTimeout(hideTimer); if (A.playing) hideTimer = setTimeout(() => { if (A.playing) bar.classList.add('hide'); }, 2600); }
+function syncUI() {
+  $('b-play').textContent = A.playing ? '❚❚' : '▶'; $('b-play').setAttribute('aria-label', A.playing ? '일시정지' : '재생');
+  $('sync').textContent = `SYNC ${S.offset >= 0 ? '+' : ''}${S.offset}ms`;
+  $('b-flash').setAttribute('aria-pressed', String(S.flash)); $('b-hud').setAttribute('aria-pressed', String(S.hud));
+  $('b-tap').setAttribute('aria-pressed', String(TP.on)); $('t-rate').textContent = `속도 ${S.rate}×`;
+  if (S.mode === 'song') wake();
+}
+function refreshBooth() {
+  const sa = $('slot-audio'), sl = $('slot-lyr');
+  sa.classList.toggle('ok', !!A.buf);
+  if (S.decoding) $('v-audio').textContent = '디코딩 중…';
+  else if (A.buf) $('v-audio').textContent = `${S.audioName} · ${fmt(A.buf.duration)}`;
+  else if (!sa.classList.contains('err')) $('v-audio').textContent = '파일 선택 또는 화면에 드롭';
+  sl.classList.toggle('ok', S.lyricsCount > 0); if (S.lyricsCount) $('v-lyr').textContent = `${S.lyricsName} · ${S.lyricsCount}줄`;
+  const tc = tapCount();
+  $('word-note').textContent = !S.lyricsCount ? '단어 타이밍: 가사를 넣으면 음절 수로 자동 추정해요 · 재생 중 TAP(T키)으로 직접 맞출 수 있어요'
+    : tc ? `단어 타이밍: 직접 맞춘 값 ${tc}개 적용됨 (이 브라우저에 저장)`
+    : S.wordSource === 'tags' ? '단어 타이밍: 가사 파일의 단어 태그 사용'
+    : S.wordSource === 'map' ? '단어 타이밍: 이 곡 전용 탭 싱크 값 적용 (285단어)'
+    : '단어 타이밍: 음절 수로 자동 추정 · 재생 중 TAP(T키)으로 직접 맞출 수 있어요';
+  go.disabled = S.decoding > 0 || !(A.buf || S.lyricsCount);
+  go.firstElementChild.textContent = S.decoding ? '음원 준비 중' : A.buf && S.lyricsCount ? '재생' : A.buf ? '가사 없이 재생' : S.lyricsCount ? '음원 없이 재생' : '재생';
+  buildTimeline();
+}
+function buildTimeline() {
+  const secs = $('secs'); secs.textContent = ''; const d = duration();
+  const col = { verse: '#5a5a63', pre: C.signal, chorus: C.hazard, post: '#ff8a1f', bridge: '#3d56c9', final: C.hazard, outro: '#5a5a63' };
+  SEC_T.forEach((s, i) => { const nx = SEC_T[i + 1]; const a = s.t / d, b2 = nx ? nx.t / d : 1; if (a >= 1) return;
+    const el = document.createElement('i'); el.style.left = (a * 100) + '%'; el.style.width = ((Math.min(1, b2) - a) * 100) + '%'; el.style.background = col[s.kind]; el.title = s.name; secs.appendChild(el); });
+}
+async function loadAudioBuffer(getBuffer, name) {
+  ensureCtx(); S.decoding++; $('slot-audio').classList.remove('err'); refreshBooth();
+  let ok = true;
+  try { const buf = await A.ctx.decodeAudioData(await getBuffer()); pause(); A.buf = buf; S.audioName = name; A.pos = 0; }
+  catch (_) { ok = false; $('slot-audio').classList.add('err'); }
+  S.decoding--; refreshBooth();
+  if (!ok) $('v-audio').textContent = '이 파일은 재생할 수 없어요. MP3나 M4A로 다시 시도해 주세요.';
+  return ok;
+}
+function loadLyricsText(text, name) {
+  const meta = []; let entries = parseLRC(text, meta);
+  if (!entries.length) { // untimed text: one line every two bars
+    const ls = text.replace(/\r/g, '').split('\n').map(s => s.trim()).filter(Boolean);
+    entries = ls.map((s, i) => ({ t: SONG_CLK.beat0 + i * 8 * SONG_CLK.spb, text: s }));
+    if (entries.length) say('타임코드가 없어 두 마디 간격으로 배치했어요');
+  }
+  if (!entries.some(x => x.text)) { $('slot-lyr').classList.add('err'); $('v-lyr').textContent = '가사 줄을 찾지 못했어요. [mm:ss.xx]가 붙은 LRC를 넣어 주세요.'; return false; }
+  $('slot-lyr').classList.remove('err'); useLyrics(entries, name.replace(/^.*\//, ''), text, meta); refreshBooth(); return true;
+}
+async function takeFiles(list) {
+  for (const f of list) {
+    const n = f.name.toLowerCase();
+    if (f.type.startsWith('audio/') || /\.(mp3|m4a|aac|wav|ogg|oga|flac|opus|webm)$/.test(n)) await loadAudioBuffer(() => f.arrayBuffer(), f.name);
+    else if (/\.(lrc|txt)$/.test(n) || f.type.startsWith('text/')) loadLyricsText(await f.text(), f.name);
+  }
+}
+function startSong() {
+  S.mode = 'song'; booth.classList.add('min'); A.pos = 0; play(); wake();
+}
+function onEnded() { syncUI(); bar.classList.remove('hide'); }
+function togglePlay() {
+  if (S.mode !== 'song') { if (!go.disabled) startSong(); return; }
+  if (A.playing) pause(); else play(); wake();
+}
+go.addEventListener('click', startSong);
+$('f-audio').addEventListener('change', ev => { if (ev.target.files.length) takeFiles(ev.target.files); ev.target.value = ''; });
+$('f-lyr').addEventListener('change', ev => { if (ev.target.files.length) takeFiles(ev.target.files); ev.target.value = ''; });
+$('b-play').addEventListener('click', togglePlay);
+$('b-sm').addEventListener('click', () => { S.offset -= 10; savePrefs(); syncUI(); });
+$('b-sp').addEventListener('click', () => { S.offset += 10; savePrefs(); syncUI(); });
+$('b-flash').addEventListener('click', () => { S.flash = !S.flash; savePrefs(); syncUI(); });
+$('b-hud').addEventListener('click', () => { S.hud = !S.hud; savePrefs(); syncUI(); });
+$('b-files').addEventListener('click', () => { pause(); booth.classList.toggle('min'); });
+$('b-fs').addEventListener('click', () => { const d = document; if (d.fullscreenElement) d.exitFullscreen().catch(() => {}); else if (d.documentElement.requestFullscreen) d.documentElement.requestFullscreen().catch(() => say('이 화면에서는 전체화면을 쓸 수 없어요')); });
+cv.addEventListener('pointerdown', ev => { if (TP.on) { ev.preventDefault(); doTap(ev.timeStamp); } });
+cv.addEventListener('click', () => { if (S.mode === 'song' && !TP.on) togglePlay(); });
+let scrub = false;
+const scrubTo = ev => { const r = tl.getBoundingClientRect(); userSeek(clamp((ev.clientX - r.left) / r.width) * duration()); };
+tl.addEventListener('pointerdown', ev => { if (S.mode !== 'song') return; scrub = true; tl.setPointerCapture(ev.pointerId); scrubTo(ev); });
+tl.addEventListener('pointermove', ev => { if (scrub) scrubTo(ev); });
+tl.addEventListener('pointerup', () => { scrub = false; });
+tl.addEventListener('keydown', ev => { if (ev.key === 'ArrowLeft' || ev.key === 'ArrowRight') { ev.preventDefault(); ev.stopPropagation(); userSeek(rawTime() + (ev.key === 'ArrowLeft' ? -5 : 5)); } });
+addEventListener('pointermove', wake, { passive: true }); addEventListener('touchstart', wake, { passive: true });
+addEventListener('keydown', ev => {
+  if (ev.target.closest && ev.target.closest('input, textarea')) return;
+  const k = ev.key;
+  if (TP.on && (k === 'j' || k === 'J' || k === 'Enter')) { ev.preventDefault(); if (!ev.repeat) doTap(ev.timeStamp); return; }
+  if (TP.on && k === 'Backspace') { ev.preventDefault(); undoTap(); return; }
+  if (TP.on && (k === 'ArrowLeft' || k === 'ArrowRight')) { ev.preventDefault(); tapJumpLine(k === 'ArrowLeft' ? -1 : 1); return; }
+  if (k === ' ') { ev.preventDefault(); togglePlay(); }
+  else if (k === 'ArrowLeft' || k === 'ArrowRight') { if (S.mode === 'song') { ev.preventDefault(); userSeek(rawTime() + (k === 'ArrowLeft' ? -5 : 5)); } }
+  else if (k === 't' || k === 'T') setTap(!TP.on);
+  else if (k === 's' || k === 'S') setRate(S.rate === 1 ? .75 : S.rate === .75 ? .5 : 1);
+  else if (k === '[' || k === ']') { S.offset += (k === '[' ? -1 : 1) * (ev.shiftKey ? 50 : 10); savePrefs(); syncUI(); say(`SYNC ${S.offset >= 0 ? '+' : ''}${S.offset}ms`); }
+  else if (k === 'f' || k === 'F') $('b-fs').click();
+  else if (k === 'h' || k === 'H') $('b-hud').click();
+  else if ((k === 'r' || k === 'R') && S.mode === 'song') userSeek(0);
+  else return;
+  wake();
+});
+// whole-window drag & drop
+let dragDepth = 0; const veil = $('veil');
+addEventListener('dragenter', ev => { ev.preventDefault(); dragDepth++; veil.hidden = false; });
+addEventListener('dragover', ev => ev.preventDefault());
+addEventListener('dragleave', () => { if (--dragDepth <= 0) { dragDepth = 0; veil.hidden = true; } });
+addEventListener('drop', ev => { ev.preventDefault(); dragDepth = 0; veil.hidden = true; if (ev.dataTransfer && ev.dataTransfer.files.length) { booth.classList.remove('min'); takeFiles(ev.dataTransfer.files); } });
+
+/* ---------- TAP SYNC ---------- */
+const tapEl = $('tap');
+function buildFlat() { TP.flat = []; S.lines.forEach((L, li) => L.words.forEach((_, wi) => TP.flat.push([li, wi]))); }
+function flatIndex(li, wi) { let n = 0; for (let i = 0; i < li && i < S.lines.length; i++) n += S.lines[i].words.length; return n + wi; }
+function cursorFromTime(t) { const li = S.lines.findIndex(L => L.t0 >= t - .25); return li < 0 ? TP.flat.length : flatIndex(li, 0); }
+function renderTapPanel(hit) {
+  if (!TP.on) return;
+  const total = TP.flat.length, cur = TP.flat[TP.cur], li = cur ? cur[0] : S.lines.length - 1, L = S.lines[li];
+  $('tap-count').textContent = `${tapCount()}/${total} 단어 맞춤`;
+  $('tap-pos').textContent = L ? `LINE ${li + 1}/${S.lines.length} · [${fmt(L.t0)}]` : 'LINE 0/0';
+  const box = $('tap-line'); box.textContent = '';
+  if (!L) { box.textContent = '가사를 먼저 넣어 주세요'; return; }
+  if (!cur) { const d = document.createElement('span'); d.className = 'w done'; d.textContent = '끝까지 맞췄어요 · LRC 내보내기로 저장하세요'; box.appendChild(d); }
+  else L.words.forEach((w, wi) => {
+    const sp = document.createElement('span'); sp.className = 'w' + (wi < cur[1] ? ' done' : '') + (wi === cur[1] ? ' next' : '') + (w.user != null ? ' user' : '');
+    sp.textContent = w.text; box.appendChild(sp);
+  });
+  if (hit) { tapEl.classList.add('hit'); setTimeout(() => tapEl.classList.remove('hit'), 90); }
+}
+function setTap(on) {
+  if (on && !S.lyricsCount) { say('가사 파일을 먼저 넣어 주세요'); return; }
+  TP.on = on; tapEl.hidden = !on; $('t-out').hidden = true;
+  if (on) {
+    if (S.mode !== 'song') { S.mode = 'song'; booth.classList.add('min'); }
+    buildFlat(); TP.cur = cursorFromTime(heardTime()); TP.undo = []; TP.lastLine = -1; renderTapPanel();
+  } else { if (S.rate !== 1) setRate(1); refreshBooth(); }
+  syncUI(); wake();
+}
+function doTap(ts) {
+  if (!TP.on) return;
+  if (!A.playing) { say('재생 중에 탭해 주세요 (Space)'); return; }
+  const f = TP.flat[TP.cur]; if (!f) return;
+  const delay = typeof ts === 'number' ? clamp((performance.now() - ts) / 1000, 0, .1) : 0;
+  const T = heardTime() - delay * A.rate;
+  const w = S.lines[f[0]].words[f[1]];
+  TP.undo.push([TP.cur, w.user]); w.user = +T.toFixed(3); TP.lastLine = f[0]; TP.cur++;
+  retime(); saveTaps(); renderTapPanel(true);
+}
+function undoTap() {
+  const u = TP.undo.pop(); if (!u) return; const [i, prev] = u; const [li, wi] = TP.flat[i]; const w = S.lines[li].words[wi];
+  if (prev == null) delete w.user; else w.user = prev;
+  TP.cur = i; retime(); saveTaps(); renderTapPanel();
+}
+function tapJumpLine(dir) {
+  const cur = TP.flat[TP.cur]; let li = cur ? cur[0] : S.lines.length - 1;
+  if (dir < 0) { if ((!cur || cur[1] === 0) && TP.lastLine >= 0 && TP.lastLine === li - 1) li = TP.lastLine; else if (!cur) li = S.lines.length - 1; }
+  else li = Math.min(S.lines.length - 1, li + 1);
+  TP.cur = flatIndex(li, 0); TP.lastLine = -1; seek(Math.max(0, S.lines[li].t0 - 1.5)); renderTapPanel();
+}
+function userSeek(t) { seek(t); if (TP.on) { TP.cur = cursorFromTime(t); TP.lastLine = -1; renderTapPanel(); } }
+$('b-tap').addEventListener('click', () => setTap(!TP.on));
+$('t-close').addEventListener('click', () => setTap(false));
+$('t-rate').addEventListener('click', () => setRate(S.rate === 1 ? .75 : S.rate === .75 ? .5 : 1));
+let resetArm = 0;
+$('t-reset').addEventListener('click', ev => {
+  const b = ev.currentTarget;
+  if (!resetArm) { b.textContent = '한 번 더 누르면 지워요'; resetArm = setTimeout(() => { resetArm = 0; b.textContent = '맞춘 값 지우기'; }, 3000); return; }
+  clearTimeout(resetArm); resetArm = 0; b.textContent = '맞춘 값 지우기'; clearTaps(); TP.undo = []; renderTapPanel(); say('맞춘 값을 지웠어요');
+});
+$('t-export').addEventListener('click', () => {
+  const text = exportLRC(), out = $('t-out');
+  const show = () => { out.value = text; out.hidden = false; out.focus(); out.select(); };
+  if (window.self === window.top) {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+    a.download = (S.lyricsName.replace(/\.(lrc|txt)$/i, '') || 'lyrics') + '-synced.lrc'; document.body.appendChild(a); a.click(); a.remove();
+  }
+  if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => say(window.self === window.top ? 'LRC 파일을 저장하고 클립보드에도 복사했어요' : 'LRC를 클립보드에 복사했어요'), () => { show(); say('아래 칸의 내용을 복사해 주세요'); });
+  else { show(); say('아래 칸의 내용을 복사해 주세요'); }
+});
+
+// Recording (top-level window only: sandboxed previews block downloads)
+const canRec = window.self === window.top && typeof MediaRecorder !== 'undefined' && !!cv.captureStream;
+const recBtn = $('b-rec'); recBtn.hidden = !canRec;
+recBtn.addEventListener('click', () => {
+  if (A.rec) { A.rec.stop(); return; }
+  if (!A.buf) { say('녹화하려면 음원을 먼저 넣어 주세요'); return; }
+  ensureCtx(); const dest = A.ctx.createMediaStreamDestination(); A.gain.connect(dest);
+  const stream = new MediaStream([...cv.captureStream(60).getVideoTracks(), ...dest.stream.getAudioTracks()]);
+  const mime = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm', 'video/mp4'].find(m => MediaRecorder.isTypeSupported(m)) || '';
+  const rec = new MediaRecorder(stream, mime ? { mimeType: mime, videoBitsPerSecond: 16e6 } : undefined); const chunks = [];
+  rec.ondataavailable = ev => { if (ev.data.size) chunks.push(ev.data); };
+  rec.onstop = () => { A.gain.disconnect(dest); A.rec = null; recBtn.classList.remove('on'); recBtn.textContent = '● REC';
+    const blob = new Blob(chunks, { type: rec.mimeType || 'video/webm' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = `pay-that-toll-kinetic.${(rec.mimeType || '').includes('mp4') ? 'mp4' : 'webm'}`; document.body.appendChild(a); a.click(); a.remove(); say('녹화 파일을 저장했어요'); };
+  A.rec = rec; recBtn.classList.add('on'); recBtn.textContent = '■ STOP';
+  if (S.mode !== 'song') { S.mode = 'song'; booth.classList.add('min'); }
+  pause(); S.rate = 1; A.pos = 0; rec.start(250); play(); wake();
+});
+function onEndedRec() { if (A.rec) A.rec.stop(); }
+
+/* ============================ boot ============================ */
+function frame() {
+  requestAnimationFrame(frame);
+  sampleAudio();
+  let t;
+  if (S.freeze != null) t = S.freeze;
+  else if (S.mode === 'song') t = songTime();
+  else t = (performance.now() / 1000 - S.demoStart) % S.demoLen;
+  render(t);
+  if (S.mode === 'song') {
+    const d = duration(), raw = clamp(A.playing ? rawTime() : A.pos, 0, d);
+    const pct = (raw / d * 100).toFixed(3) + '%'; $('tl-head').style.left = pct; $('tl-fill').style.width = pct;
+    tl.setAttribute('aria-valuenow', String(Math.round(raw / d * 100)));
+    $('time').textContent = `${fmt(raw)} / ${fmt(d).slice(0, 5)}`;
+    if (!A.playing && A.rec) onEndedRec();
+  }
+}
+async function autoload() { // serve the folder with media/song.mp3 + media/lyrics.lrc to skip the file pickers
+  try { const r = await fetch('media/song.mp3'); if (r.ok && (r.headers.get('content-type') || '').indexOf('html') < 0) await loadAudioBuffer(() => r.arrayBuffer(), 'media/song.mp3'); } catch (_) {}
+  for (const p of ['media/lyrics.lrc', 'media/lyrics.txt']) {
+    try { const r = await fetch(p); if (!r.ok) continue; const txt = await r.text(); if (parseLRC(txt).length) { loadLyricsText(txt, p); break; } } catch (_) {}
+  }
+}
+addEventListener('resize', resize);
+resize(); measureCaps(); buildDemo(); syncUI(); refreshBooth();
+if (document.fonts && document.fonts.load) {
+  Promise.all(['400 100px "Archivo Black"', '700 100px "Archivo Narrow"', '400 100px "IBM Plex Mono"', '500 100px "IBM Plex Mono"', '600 100px "IBM Plex Mono"', '400 100px "IM Fell English"', 'italic 400 100px "IM Fell English"']
+    .map(s => document.fonts.load(s).catch(() => {}))).then(() => { MC.clear(); RC.clear(); STAMPS.clear(); measureCaps(); for (const L of S.lines.concat(S.demoLines)) { L._ck = null; L._tree = null; } });
+}
+requestAnimationFrame(frame);
+if (location.protocol !== 'file:') autoload();
+
+// debug hooks for frame checks: PTT.at(seconds) freezes a frame, PTT.run() resumes
+window.PTT = { S, TP, tap: doTap, undo: undoTap, setTap, exportLRC, words: () => S.lines.map(L => L.words.map(w => +w.t.toFixed(3))), at(t, mode = 'song') { S.mode = mode; S.freeze = t; booth.classList.add('min'); }, run() { S.freeze = null; }, lines: () => S.lines.map(L => ({ t0: L.t0, tEnd: L.tEnd, layout: L.layout, kind: L.kind, n: L.words.length })) };
+})();
+</script>
+</body>
+</html>
